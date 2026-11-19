@@ -3,6 +3,10 @@
     python scripts/analyze.py --exp e1-4x4 e2-6x6
 
 Figures that aren't implemented yet are reported as [todo] and skipped, so this is usable from day one.
+
+Output names are the contract with report/main.tex, which includes them by path (figures/<exp>/f*.pdf,
+tables/<exp>/t1_summary.tex). Save figures as PDF, sized for the report's 5.5 in text width
+and at most 1.6-1.7 in tall (figures count toward the page limit; see report/main.tex).
 """
 
 from __future__ import annotations
@@ -38,44 +42,49 @@ def load_experiment(exp: str, root: Path) -> tuple[int | None, Logs]:
 
 def fig_accuracy_4x4(logs: Logs, out: Path) -> None:
     """F1: optimal-move accuracy vs games. Two panels (env, negamax), naive vs pool, seed bands, plus a
-    chance-accuracy line."""
+    chance-accuracy line. Writes f1_accuracy.pdf."""
     raise NotImplementedError("analyze.fig_accuracy_4x4")
 
 
 def fig_scores_6x6(logs: Logs, out: Path) -> None:
-    """F2: score vs positional (random/greedy in the appendix version), same two-panel layout as F1."""
+    """F2: score vs positional (random/greedy in the appendix version), same two-panel layout as F1.
+    Writes f2_scores.pdf."""
     raise NotImplementedError("analyze.fig_scores_6x6")
 
 
 def fig_selfplay_vs_external(logs: Logs, out: Path) -> None:
-    """F3 (headline figure): self-play score and external score on the same axes."""
+    """F3 (headline figure): self-play score and external score on the same axes.
+    Writes f3_selfplay_vs_external.pdf."""
     raise NotImplementedError("analyze.fig_selfplay_vs_external")
 
 
 def fig_crossplay(exp: str, root: Path, out: Path) -> None:
-    """F4: cross-play heatmaps, naive vs pool (evaluate.crossplay_matrix over 15 checkpoints per run)."""
+    """F4: cross-play heatmaps, naive vs pool (evaluate.crossplay_matrix over 15 checkpoints per run).
+    Writes f4_crossplay.pdf."""
     raise NotImplementedError("analyze.fig_crossplay")
 
 
 def fig_endgame_6x6(logs: Logs, out: Path) -> None:
-    """F5: 6×6 endgame accuracy vs games."""
+    """F5: 6×6 endgame accuracy vs games. Writes f5_endgame.pdf."""
     raise NotImplementedError("analyze.fig_endgame_6x6")
 
 
 def fig_regret(exp: str, root: Path, out: Path) -> None:
     """F7: self-history regret by reference checkpoint for final naive vs pool agents (MADRID Fig. 4b
-    analog), plus the regret grid over (empties × disc differential) (Fig. 6 analog)."""
+    analog), plus the regret grid over (empties × disc differential) (Fig. 6 analog).
+    Writes f7_regret.pdf."""
     raise NotImplementedError("analyze.fig_regret")
 
 
 def fig_true_vs_checkpoint_regret(exp: str, root: Path, out: Path) -> None:
-    """F8 (4×4): checkpoint-estimated vs true regret."""
+    """F8 (4×4): checkpoint-estimated vs true regret. Writes f8_true_vs_checkpoint_regret.pdf."""
     raise NotImplementedError("analyze.fig_true_vs_checkpoint_regret")
 
 
 def table_summary(logs: Logs, out: Path) -> None:
     """T1: evaluate.summarize_run numbers, mean ± std across seeds, plus the (pool − naive) gap per
-    target type (H4)."""
+    target type (H4). Writes t1_summary.tex: a bare booktabs `tabular` (no `table` wrapper; the report
+    supplies the caption). `out` is a directory that may not exist yet."""
     raise NotImplementedError("analyze.table_summary")
 
 

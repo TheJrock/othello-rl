@@ -31,6 +31,7 @@ Without `uv` (e.g. on the training server): `python3 -m venv .venv && .venv/bin/
 | `make pilot-6x6`, `make sweep-6x6` | P and E2 on 6×6 |
 | `make sync SERVER=user@host` | rsync `runs/` back from the training server |
 | `make figures` | `runs/` → `figures/`, `tables/` |
+| `make report` | Build `report/main.pdf` (NeurIPS style; needs `brew install tectonic` or MacTeX) |
 | `make demo RUN=runs/e2-6x6/env-pool/seed0` | Export a run for the web demo |
 | `make web-dev` | Serve the demo locally |
 

@@ -7,7 +7,7 @@ SERVER ?=
 SERVER_DIR ?= othello-rl
 RUN ?=
 
-.PHONY: help setup test test-py test-web data sweep-4x4 pilot-6x6 sweep-6x6 sync figures demo web-dev
+.PHONY: help setup test test-py test-web data sweep-4x4 pilot-6x6 sweep-6x6 sync figures report demo web-dev
 
 help:  ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-11s %s\n", $$1, $$2}'
@@ -47,6 +47,9 @@ sync:  ## copy runs/ back from the server: make sync SERVER=user@host
 
 figures:  ## runs/ -> figures/ and tables/
 	$(PY) scripts/analyze.py --exp e1-4x4 e2-6x6
+
+report:  ## build report/main.pdf (needs tectonic: `brew install tectonic`, or latexmk from MacTeX)
+	cd report && if command -v tectonic >/dev/null; then tectonic main.tex; else latexmk -pdf main.tex; fi
 
 demo:  ## export a run for the web demo: make demo RUN=runs/e2-6x6/env-pool/seed0
 	@test -n "$(RUN)" || (echo "usage: make demo RUN=runs/<exp>/<target>-<sampling>/seed<k>"; exit 1)

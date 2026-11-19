@@ -142,7 +142,7 @@ othello-rl/
 │   ├── src/{main.ts, engine.ts, agent.ts, ui/…}     # engine.ts mirrors engine.py's API names
 │   ├── public/{models/*.onnx, data/*.json}         # written by export_demo.py, committed
 │   └── tests/{engine.parity.test.ts, model.parity.test.ts, fixtures/}
-├── report/
+├── report/                    # main.tex (NeurIPS 2025 style) + references.bib; `make report`
 └── .github/workflows/
     ├── tests.yml              # pytest + vitest on push
     └── pages.yml              # build web/ and deploy to GitHub Pages
@@ -375,7 +375,7 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17.
 ### Week 1 — Foundations and 4×4 (Nov 18–25)
 
 **Wed Nov 18** (~3 h)
-- [ ] Ask the instructor about presentation length/format and report length/format.
+- [x] Ask the instructor about presentation length/format and report length/format (§11).
 - [ ] Create repo and environment (`torch numpy pytest pyyaml matplotlib scipy`), set up the §4.1 layout.
 - [ ] Engine: bitboards, move generation, flips.
 
@@ -483,7 +483,7 @@ No new experiments in report week. Extra seeds may run in the background if they
 
 ---
 
-## 8. Presentation outline (adjust to the time limit)
+## 8. Presentation outline (~15 minutes)
 
 1. **Hook:** F3. "This line says the agent is stuck. This one says it's improving. Which do you believe?" Put the demo QR code up.
 2. **Self-play as non-stationary RL:** the opponent changes with every update; replayed data comes from older players.
@@ -496,6 +496,8 @@ No new experiments in report week. Extra seeds may run in the background if they
 
 ## 9. Report outline
 
+4–6 pages, single-column conference template (NeurIPS or ICLR style). Figures count toward the limit; references and the appendix don't. The limit is soft, but no padding: every paragraph has a purpose and figures stay modest (full width, ≤ 1.7 in tall). Working budget: ~2,600 words + ~1.3 pages of figures/tables ≈ 5.5 pages.
+
 Abstract · 1 Introduction and question · 2 Background and related work (self-play, DQN, opponent pools, MADRID checkpoint regret) · 3 Formulation (MDP, both views, targets, passes) · 4 Method (network, Double DQN, symmetries, pool) · 5 Experimental setup (2×2, boards, seeds, budgets, opponents, solvers, metrics, regret) · 6 Results · 7 Discussion (what self-play metrics hide; when pools matter) · 8 Limitations and future work (8×8, prioritized pool sampling, search, MAP-Elites over positions) · 9 Conclusion · Appendix (hyperparameters, validation, demo link)
 
 ## 10. References
@@ -505,6 +507,6 @@ Abstract · 1 Introduction and question · 2 Background and related work (self-p
 
 ## 11. Open items
 
-- [ ] Presentation length/format and report length/format (instructor).
+- [x] Presentation: ~15 minutes. Report: 4–6 pages in a single-column conference template (IEEE, NeurIPS, ICLR, or equivalent). Figures count toward the pages, references and the appendix don't; the limit is soft but no filler or oversized figures (Nov 19).
 - [ ] Server specs: CPU cores, GPU? These decide whether all 12 E2 runs fit (Nov 24).
 - [x] Demo URL: `othello.johnnygoodlad.dev` (portfolio is a project site with a custom domain; §5.5).

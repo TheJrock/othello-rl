@@ -18,6 +18,18 @@ data/cache/
 web/node_modules/
 web/dist/
 
+# LaTeX build files (latexmk leaves these in report/; tectonic doesn't). The draft PDF is a build
+# output too; the finished report gets published as web/public/report.pdf (spec §6, Dec 16).
+report/main.pdf
+report/*.aux
+report/*.bbl
+report/*.blg
+report/*.fdb_latexmk
+report/*.fls
+report/*.log
+report/*.out
+report/*.synctex.gz
+
 # Course materials and papers stay out of the public repo
 docs/private/
 

@@ -1,0 +1,374 @@
+% =================================================================================================
+% CS 401R final report (spec §9). NeurIPS 2025 style (official neurips_2025.sty), single column.
+%
+% Build:  make report            (needs `brew install tectonic`, or latexmk from MacTeX)
+%   or:   Overleaf: upload this folder plus figures/ and tables/, then set \figdir and \tabdir below.
+%
+% PAGE BUDGET (instructor, Nov 19). 4-6 pages; figures count, references and the appendix don't. The limit is soft,
+% but every paragraph has to earn its place and figures must not be blown up to fill space.
+%   Target: ~2,600 words of prose + ~1.3 pages of figures and tables = about 5.5 pages before the
+%   references. A page of prose in this style holds about 700-750 words (measured on the first build).
+%   Figures: full text width, 1.6-1.7 in tall (the height passed to \figfile is a maximum). Each one
+%   is referenced in the text and makes one point; one that doesn't change the argument goes to the
+%   appendix. The appendix holds what a careful reader might check (hyperparameters, validation,
+%   secondary figures), not overflow that the main text's argument depends on.
+%
+% PLACEHOLDERS. \filler{N} draws N words of gray stand-in text, so the compiled draft shows its real
+% length before you've written anything. Delete a section's \filler as you write that section.
+% Red \draft{...} notes say what goes where. \notesfalse hides just the notes (the length you'd hand
+% in if every section hit its budget); \placeholdersfalse hides notes and filler, leaving only real text.
+% Figures and tables that scripts/analyze.py hasn't written yet appear as boxes of their final size.
+% =================================================================================================
+
+\documentclass{article}
+
+% `preprint` shows the author block and turns off the anonymous-submission line numbers.
+\usepackage[preprint]{neurips_2025}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{hyperref}  % load last
+\hypersetup{colorlinks=true, allcolors=blue!50!black}
+
+% The style's first-page footer reads "Preprint." This is a class report, so say that instead.
+\makeatletter
+\renewcommand{\@noticestring}{CS 401R: Reinforcement Learning. Final project report, December 2026.}
+\makeatother
+
+% --- condition names (rename here once and the whole paper follows) -------------------------------
+\newcommand{\envT}{\textsf{env}}          % opponent-as-environment targets
+\newcommand{\negT}{\textsf{negamax}}      % negamax targets
+\newcommand{\naiveS}{\textsf{naive}}      % latest vs latest
+\newcommand{\poolS}{\textsf{pool}}        % past checkpoints
+
+% --- placeholders (see header) ---------------------------------------------------------------------
+\newif\ifplaceholders \placeholderstrue
+\newif\ifnotes \notestrue
+
+\newcommand{\draft}[1]{\ifplaceholders\ifnotes{\color{red!60!black}\sffamily\small[#1]}\par\fi\fi}
+
+\newcount\fillerwords \newcount\fillerpara
+\newcommand{\filler}[1]{%
+  \ifplaceholders\par{\color{black!30}\fillerwords=0\relax\fillerpara=0\relax
+    \loop\ifnum\fillerwords<#1\relax
+      lorem ipsum dolor sit amet, consectetur adipiscing elit sed do %
+      \advance\fillerwords by 10\relax
+      \advance\fillerpara by 10\relax
+      \ifnum\fillerpara>119 \par\fillerpara=0\relax\fi
+    \repeat\par}\fi}
+
+% --- figures and tables written by scripts/analyze.py ----------------------------------------------
+% File names are the contract with analyze.py (see its docstrings). On Overleaf, set these to
+% `figures` and `tables` after uploading those folders next to main.tex.
+\newcommand{\figdir}{../figures}
+\newcommand{\tabdir}{../tables}
+
+\newcommand{\missingbox}[2]{% {height}{label}
+  \fbox{\parbox[c][#1][c]{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}{\centering\small\color{black!50}%
+    \texttt{\detokenize{#2}}\\[2pt]not generated yet}}}
+
+% \figfile{<exp>/<file>.pdf}{height}: the figure if it exists, else a box of that height.
+\newcommand{\figfile}[2]{%
+  \IfFileExists{\figdir/#1}%
+    {\includegraphics[width=\linewidth,height=#2,keepaspectratio]{\figdir/#1}}%
+    {\missingbox{#2}{figures/#1}}}
+
+% \tabfile{<exp>/<file>.tex}{height}: \input the generated tabular if it exists, else a box.
+\newcommand{\tabfile}[2]{%
+  \IfFileExists{\tabdir/#1}{\input{\tabdir/#1}}{\missingbox{#2}{tables/#1}}}
+
+% =================================================================================================
+
+\title{Self-Play with Deep Q-Learning in Othello}
+
+\author{%
+  Johnny Goodlad\\
+  CS 401R: Reinforcement Learning\\
+  % TODO: affiliation and email, if the course wants them
+}
+
+\begin{document}
+
+\maketitle
+
+% ~150 words
+\begin{abstract}
+  \draft{Abstract (150 words): the question, the $2\times2$ design, the main result for each
+  hypothesis, and the one-line takeaway about self-play win rate.}
+  \filler{150}
+\end{abstract}
+
+% =================================================================================================
+% ~350 words. Spec §1 and the proposal's "Why this question matters".
+\section{Introduction}
+
+\draft{Introduction (350 words): the question; why self-play win rate is a weak progress signal
+(it hovers near 50\% whether the agent improves, stalls, or forgets); the $2\times2$ design;
+hypotheses H1--H4 as a short contributions list; point to Figure~\ref{fig:headline}.}
+\filler{175}
+
+\begin{figure}[t]
+  \centering
+  \figfile{e2-6x6/f3_selfplay_vs_external.pdf}{1.7in}
+  \caption[F3]{Self-play score (current network vs.\ previous checkpoint) and score against the
+  positional player over training on $6\times6$. TODO: one-sentence takeaway.}
+  \label{fig:headline}
+\end{figure}
+
+\filler{175}
+
+% =================================================================================================
+% ~250 words. Spec §10 references; D1's AlphaGo/AlphaZero contrast.
+\section{Background and related work}
+
+\draft{Background (250 words): self-play \citep{tesauro1995temporal,silver2016mastering,silver2018general};
+opponent pools and leagues \citep{bansal2018emergent,lanctot2017unified,vinyals2019grandmaster,berner2019dota},
+including AlphaGo sampling past opponents vs.\ AlphaZero using only the latest network;
+DQN and Double DQN \citep{mnih2015human,vanhasselt2016double};
+checkpoint regret \citep{samvelyan2024madrid} on TiZero's checkpoints \citep{lin2023tizero};
+a source for the $4\times4$ and $6\times6$ solved results (still to confirm).}
+\filler{250}
+
+% =================================================================================================
+% ~400 words plus the equations. Spec §3 D1 (two views), D3 (passes), §4.5 (targets).
+\section{Formulation}
+
+\draft{Formulation (400 words): the MDP from the learner's view (states, actions including pass,
+terminal $\pm1/0$ reward, $\gamma=1$). The two views of the opponent: under \envT{} the opponent is
+part of the transition function, so $Q$ is a best response to the opponents it trained against;
+under \negT{}, $Q$ estimates the minimax value whatever the opponent does. Why the pool should
+matter more for \envT{} (H4). Passes: an explicit action with a sign flip under \negT{}, absorbed
+into the dynamics under \envT{}.}
+\filler{225}
+
+Both target types share Double DQN action selection; they differ only in the sign of the bootstrap
+term and in what $s'$ is:
+\begin{align}
+  a^\star &= \arg\max_{a' \in \mathcal{A}(s')} Q_\phi(s', a'), \label{eq:argmax}\\
+  y &= \begin{cases}
+    r & s' \text{ terminal},\\
+    +\,Q_{\bar\phi}(s', a^\star) & \text{\envT{}: } s' \text{ is the learner's next turn},\\
+    -\,Q_{\bar\phi}(s', a^\star) & \text{\negT{}: } s' \text{ is the opponent's turn}.
+  \end{cases} \label{eq:target}
+\end{align}
+
+\filler{125}
+
+% =================================================================================================
+% ~250 words. Spec §4.5-4.6, D2.
+\section{Method}
+
+\draft{Method (250 words): Q-network (conv trunk, no batch norm, $\tanh$ output over $N^2+1$
+actions); Double DQN with Huber loss; illegal-move masking; a random D4 symmetry at sample time;
+only the learner's moves are stored, in all four conditions; the pool sampling rule.
+Full hyperparameters are in Appendix~\ref{app:hparams}.}
+\filler{250}
+
+% =================================================================================================
+% ~350 words. Spec §4.3-4.4, §4.7, D4-D6.
+\section{Experimental setup}
+
+\begin{table}[t]
+  \caption[Design]{The $2\times2$ design. All other settings are shared across conditions.}
+  \label{tab:design}
+  \centering
+  \begin{tabular}{lcc}
+    \toprule
+    & \naiveS{} (latest vs.\ latest) & \poolS{} (past checkpoints) \\
+    \midrule
+    \envT{} targets (opponent as environment) & \envT-\naiveS & \envT-\poolS \\
+    \negT{} targets & \negT-\naiveS & \negT-\poolS \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\draft{Setup (350 words): boards and seeds ($4\times4$: 5 seeds; $6\times6$: 3); game and gradient
+budgets; reference players (random, greedy, positional); the exact $4\times4$ solver and the
+$6\times6$ endgame solver; opening banks played with both colors; score with 95\% Wilson intervals
+\citep{wilson1927probable}; self-play score = current vs.\ previous checkpoint; per-run summary
+numbers; checkpoint regret (Eq.~\ref{eq:regret}) against self-history and held-out references.}
+\filler{225}
+
+For a position $\theta$ and a target agent $T$, a reference policy $R$ has regret
+\begin{equation}
+  \mathrm{reg}_R(\theta) = V^\theta(R, T) - V^\theta(T, T) \in \{-2, \dots, 2\},
+  \label{eq:regret}
+\end{equation}
+where $V^\theta(X, T)$ is the outcome for the side to move when $X$ plays it from $\theta$ against $T$.
+
+\filler{125}
+
+% =================================================================================================
+% ~500 words total, plus the main-text figures and table.
+\section{Results}
+
+\subsection{\texorpdfstring{$4\times4$}{4x4}: accuracy against exact play}
+\draft{(150 words) Figure~\ref{fig:acc4}; H1 on $4\times4$; Q-vs-solver error for \negT{} only.}
+\filler{150}
+
+\begin{figure}[t]
+  \centering
+  \figfile{e1-4x4/f1_accuracy.pdf}{1.6in}
+  \caption[F1]{Optimal-move accuracy on $4\times4$ against games played, for \envT{} (left) and
+  \negT{} (right) targets; \naiveS{} vs.\ \poolS{}, bands over 5 seeds, dashed line = chance.
+  TODO: takeaway.}
+  \label{fig:acc4}
+\end{figure}
+
+\subsection{\texorpdfstring{$6\times6$}{6x6}: strength against reference players}
+\draft{(175 words) Figure~\ref{fig:scores6} and Table~\ref{tab:summary}; H1 and H2; the
+\poolS{}$-$\naiveS{} gap under each target type (H4).}
+\filler{175}
+
+\begin{figure}[t]
+  \centering
+  \figfile{e2-6x6/f2_scores.pdf}{1.6in}
+  \caption[F2]{Score against the positional player on $6\times6$, same layout as
+  Figure~\ref{fig:acc4}; bands over 3 seeds. TODO: takeaway.}
+  \label{fig:scores6}
+\end{figure}
+
+\begin{table}[t]
+  \caption[T1]{Per-run summary on $6\times6$, mean $\pm$ std over seeds: final score, peak, maximum
+  drawdown, forgetting events, Spearman $\rho$ between self-play and external score, and the
+  \poolS{}$-$\naiveS{} gap per target type.}
+  \label{tab:summary}
+  \centering
+  \tabfile{e2-6x6/t1_summary.tex}{1.0in}
+\end{table}
+
+\subsection{What self-play hides}
+\draft{(175 words) Figure~\ref{fig:headline} and Figure~\ref{fig:regret}; H3; positions where earlier
+checkpoints beat the final agent; self-history vs.\ held-out regret.}
+\filler{175}
+
+\begin{figure}[t]
+  \centering
+  \figfile{e2-6x6/f7_regret.pdf}{1.7in}
+  \caption[F7]{Left: self-history regret by reference checkpoint for the final \naiveS{} and \poolS{}
+  agents. Right: regret over (empty squares $\times$ disc differential). TODO: takeaway.}
+  \label{fig:regret}
+\end{figure}
+
+% =================================================================================================
+% ~200 words. Spec D1 note (replay buffer as an implicit pool).
+\section{Discussion}
+
+\draft{Discussion (200 words): what self-play metrics hide; when pools matter (the H4 result); the
+replay buffer as an implicit short-window pool under \envT-\naiveS{}; anything from the presentation
+Q\&A.}
+\filler{200}
+
+% =================================================================================================
+% ~100 words. Can merge into Discussion if space is tight.
+\section{Limitations and future work}
+
+\draft{Limitations (100 words): small boards, few seeds, one seed in the demo; future work: $8\times8$,
+prioritized pool sampling, search, MAP-Elites over positions.}
+\filler{100}
+
+% =================================================================================================
+% ~75 words.
+\section{Conclusion}
+
+\draft{Conclusion (75 words): answer the question in two or three sentences.}
+\filler{75}
+
+% =================================================================================================
+
+{\small
+\bibliographystyle{plainnat}
+\bibliography{references}
+}
+
+% =================================================================================================
+\appendix
+
+\section{Hyperparameters}
+\label{app:hparams}
+
+% From spec §4.5. Update to the values actually run (the 6x6 game budget is fixed on Nov 24).
+\begin{table}[h]
+  \caption[Hyperparameters]{Hyperparameters, shared by all four conditions.}
+  \label{tab:hparams}
+  \centering
+  \small
+  \begin{tabular}{lll}
+    \toprule
+    & $4\times4$ & $6\times6$ \\
+    \midrule
+    Network trunk & 3 conv layers, 64 channels & 4 conv layers, 64 channels \\
+    Training games & 30k & $\sim$200k \\
+    Parallel games & 128 & 256 \\
+    Replay capacity (transitions) & 50k & 300k \\
+    Evaluation and checkpoint interval & 1k games & 5k games \\
+    Seeds & 5 & 3 \\
+    \midrule
+    Batch size, optimizer & \multicolumn{2}{l}{256, Adam with learning rate $3\times10^{-4}$} \\
+    Gradient steps & \multicolumn{2}{l}{1 per 16 new learner transitions} \\
+    Target network & \multicolumn{2}{l}{hard update every 1{,}000 gradient steps} \\
+    Exploration & \multicolumn{2}{l}{$\varepsilon$ from 1.0 to 0.05 over the first 20\% of games} \\
+    Loss & \multicolumn{2}{l}{Huber, $\gamma = 1$, gradient-norm clip 10} \\
+    Pool sampling & \multicolumn{2}{l}{latest with $p = 0.5$, else a uniform past checkpoint} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Validation}
+\label{app:validation}
+
+\draft{Engine: 8$\times$8 perft through depth 6 and 10k random games; TypeScript engine and ONNX parity
+tests; the $4\times4$ start-position value against the published result; endgame-solver checks.}
+\filler{150}
+
+\section{Additional results}
+\label{app:extra}
+
+\draft{Cross-play heatmaps (F4), $6\times6$ endgame accuracy (F5), checkpoint vs.\ true regret on
+$4\times4$ (F8), the $4\times4$ summary table. F6 (Q heatmaps on teaching positions) has no
+analyze.py function yet; add one or drop it.}
+
+\begin{figure}[h]
+  \centering
+  \figfile{e2-6x6/f4_crossplay.pdf}{2.0in}
+  \caption[F4]{Cross-play between 15 checkpoints per run, \naiveS{} vs.\ \poolS{}, $6\times6$.}
+  \label{fig:crossplay}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \figfile{e2-6x6/f5_endgame.pdf}{1.8in}
+  \caption[F5]{Endgame accuracy on 500 solved $6\times6$ positions against games played.}
+  \label{fig:endgame}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \figfile{e1-4x4/f8_true_vs_checkpoint_regret.pdf}{1.8in}
+  \caption[F8]{Checkpoint-estimated regret vs.\ true regret against the optimal policy, $4\times4$.}
+  \label{fig:trueregret}
+\end{figure}
+
+\begin{table}[h]
+  \caption[T1 4x4]{Per-run summary on $4\times4$, same columns as Table~\ref{tab:summary}.}
+  \label{tab:summary4}
+  \centering
+  \tabfile{e1-4x4/t1_summary.tex}{1.2in}
+\end{table}
+
+\section{Demo}
+\label{app:demo}
+
+The trained agents can be played in the browser at \url{https://othello.johnnygoodlad.dev}.
+% Spec §5.3.
+\draft{Which condition and seed the demo uses, and that it is one seed.}
+
+\end{document}
