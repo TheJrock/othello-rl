@@ -1,0 +1,35 @@
+# 4×4 defaults (spec §4.5). exp / target / sampling / seed come from the command line:
+#   python -m othello_rl.train --config configs/4x4.yaml --exp dev --target env --sampling naive --seed 0
+board: 4
+
+# network
+channels: 64
+layers: 3
+
+# self-play and replay
+games: 30000
+parallel_games: 128
+replay_capacity: 50000
+augment: true
+
+# optimisation
+batch_size: 256
+lr: 0.0003
+transitions_per_grad_step: 16
+target_update_every: 1000
+grad_clip: 10.0
+
+# exploration (both players)
+eps_start: 1.0
+eps_end: 0.05
+eps_decay_frac: 0.2
+
+# opponent pool (sampling: pool only)
+pool_groups: 8
+pool_p_latest: 0.5
+
+# evaluation and checkpoints
+eval_every: 1000
+openings: data/openings_4x4.json
+solver_table: data/cache/solve4x4.npz
+endgame_set: null

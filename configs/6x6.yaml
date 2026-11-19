@@ -1,0 +1,35 @@
+# 6×6 defaults (spec §4.5). exp / target / sampling / seed come from the command line:
+#   python -m othello_rl.train --config configs/6x6.yaml --exp e2-6x6 --target env --sampling pool --seed 0
+board: 6
+
+# network
+channels: 64
+layers: 4
+
+# self-play and replay
+games: 200000            # set from measured throughput on Nov 24 so one run takes <= 6 h (spec §4.8)
+parallel_games: 256
+replay_capacity: 300000
+augment: true
+
+# optimisation
+batch_size: 256
+lr: 0.0003
+transitions_per_grad_step: 16
+target_update_every: 1000
+grad_clip: 10.0
+
+# exploration (both players)
+eps_start: 1.0
+eps_end: 0.05
+eps_decay_frac: 0.2
+
+# opponent pool (sampling: pool only)
+pool_groups: 8
+pool_p_latest: 0.5
+
+# evaluation and checkpoints
+eval_every: 5000
+openings: data/openings_6x6.json
+solver_table: null
+endgame_set: data/endgame6.jsonl

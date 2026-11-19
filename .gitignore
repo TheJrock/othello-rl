@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Training outputs: rsync from the server, never commit (spec §4.1)
+runs/
+*.pt
+*.pth
+
+# Derived data that is cheap to rebuild (e.g. data/cache/solve4x4.npz)
+data/cache/
+
+# Web
+web/node_modules/
+web/dist/
+
+# Course materials and papers stay out of the public repo
+docs/private/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

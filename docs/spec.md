@@ -1,0 +1,508 @@
+# Othello Self-Play — Project Spec & Timeline
+
+Companion to `docs/proposal.md` · Written Wed Nov 18, 2026 · Rev. 3 (2×2 design, MADRID-style checkpoint regret, repo scaffold)
+
+| Date | Milestone |
+|---|---|
+| **Wed Nov 25** | **M1** — 4×4 DQN learning under both target types and checked against the exact solver; 4×4 sweep and 6×6 pilot runs launched to run over Thanksgiving |
+| Thu Nov 26 – Sat Nov 28 | Thanksgiving: light days, no new code on the critical path |
+| **Tue Dec 1** | **M2** — Experiment code frozen; final 6×6 runs launched |
+| **Sat Dec 5** | **M3** — All figures final; demo's play view live on your domain |
+| **Thu Dec 10** | Presentation |
+| **Thu Dec 17** | Report due |
+
+Sundays are left unscheduled as rest/buffer.
+
+**Done by Dec 10 means:** (1) 4×4 and 6×6 results for the 2×2 design (target type × opponent sampling) across seeds, (2) the self-play-win-rate-vs-external-metric figure and the checkpoint-regret figure, (3) a rehearsed deck, (4) a playable demo on your portfolio domain.
+
+---
+
+## 1. Research question, design, hypotheses
+
+**Question (from proposal):** Does training against a pool of past checkpoints produce stronger, more stable Othello agents than naive latest-vs-latest self-play, and does self-play win rate reveal the difference?
+
+**Design: 2×2.** Two target formulations × two opponent-sampling schemes. Everything else is shared.
+
+| | Naive (latest vs latest) | Pool (past checkpoints) |
+|---|---|---|
+| **Opponent-as-environment** targets | A-naive | A-pool |
+| **Negamax** targets | N-naive | N-pool |
+
+| | Hypothesis | Evidence | What would change my mind |
+|---|---|---|---|
+| H1 | Pool agents end stronger | Final score vs reference opponents (6×6); optimal-move accuracy (4×4) | Naive ≥ pool on most seeds under both target types |
+| H2 | Pool agents are more stable | Smaller drawdowns after peak; fewer forgetting events; lower self-history regret (§4.7) | Naive curves as smooth as pool; earlier checkpoints rarely beat the final naive agent |
+| H3 | Self-play win rate hides the difference | Self-play score stays roughly 45–65% in all conditions; weak correlation with external metrics; positions where earlier checkpoints beat the final agent are invisible to it | Self-play score tracks external score closely (Spearman ρ > 0.7) |
+| **H4** | **The pool matters more under opponent-as-environment targets than under negamax** | Interaction: (pool − naive) gap is larger in the A row than the N row | Similar gaps in both rows. That would mean the pool helps through data diversity, which both rows share, rather than by fixing the opponent assumption |
+
+A null result on H1/H2 is still a valid finding ("at this scale, naive self-play doesn't forget"). H3 and H4 make the presentation work either way.
+
+---
+
+## 2. Scope
+
+| Tier | Items |
+|---|---|
+| **Must** (Dec 10) | Engine + tests · random/greedy/positional opponents · 4×4 exact solver · DQN with both target types · 2×2 on 4×4 (5 seeds) and 6×6 (3 seeds; fallback in §4.8) · external-metric and self-play curves · demo play view · deck |
+| **Should** | MADRID-style checkpoint regret analysis (§4.7) · 6×6 endgame-accuracy metric · cross-play matrices · "Watch it learn" view (can slip into Dec 11–16) |
+| **Could** | Snapshot-vs-snapshot autoplay in the demo · let demo visitors pick an A or N agent · 4×4 "perfect play" coach mode · replay-buffer-size ablation for A-naive (§3 D1) · pool-mix ablation (80/20) |
+| **Won't** | 8×8 (future work) · MAP-Elites/CMA-ME search. Small Othello position sets can be enumerated or sampled directly (§4.7). |
+
+---
+
+## 3. Design decisions (read before coding)
+
+**D1. Run both target formulations. Your proposal already contains both.**
+The proposal's MDP row ("opponent's policy is part of the environment") describes formulation A. Its Method section ("negamax targets") describes formulation N. They make different assumptions about the opponent, and that difference is what decides whether a pool should matter.
+
+- **A — Opponent-as-environment.** The learner moves, then the opponent replies, and `s'` is the learner's next turn. The target is `r + max_a' Q(s', a')` with no sign flip. Q estimates value *against the opponents it trained with*, so the agent learns a **best response to its opponent distribution**.
+  - Naive: the opponent is its latest self, so it chases a moving best response. That is the classic setup for cycling and forgetting.
+  - Pool: the MDP becomes a slowly changing mixture over past checkpoints.
+  - The replayed transitions were generated under *older opponents*, i.e. a different transition function (the proposal's Lectures 14–15 connection). Transitions are stochastic whenever the opponent is (ε-greedy or sampled from a pool).
+- **N — Negamax.** `s'` is the opponent's turn, and the target is `−max_a' Q(s', a')`. Your own network stands in for the opponent's best reply, so the target is the game's minimax value whatever the real opponent does. The pool only changes *which positions reach the replay buffer*. The non-stationarity is the shifting state distribution plus bootstrapping from a moving network.
+- **Prediction (H4):** the pool helps A more than N. The literature leans this way: AlphaGo's policy-gradient stage sampled past opponents, while AlphaZero's minimax-style value targets used only the latest network. On small Othello boards (fairly transitive games) the effect may be small. Either outcome is reportable.
+- **Note for the analysis:** under A-naive, the replay buffer already holds transitions from recent past selves, so the buffer acts as an *implicit short-window pool*. With 300k transitions on 6×6, that is roughly the last ~10% of training. Report this; never tune buffer size per condition.
+- **If you could only run one,** run A. It is the formulation where the pool's mechanism actually operates, and it matches the proposal's MDP and course connection.
+
+**D2. Store only the learner's moves, in all four conditions.** In each game, one side is "the learner" (Black in half the games, White in the other half). Only its transitions enter replay. This keeps data volume identical across the 2×2, so the *only* differences are the target and the opponent sampling. N could legally use both sides' moves; skip that to keep the comparison clean.
+
+**D3. Passes.**
+- **N:** action space = N² squares + 1 pass. Pass is legal **only** when no square is legal. A forced pass is a real transition, so the sign flips consistently.
+- **A:** the environment step applies the learner's move, then lets the opponent play (including any forced passes on either side) until the learner has a legal square or the game ends. The learner never sees a pass state, so passes are absorbed into the dynamics. This contrast is good material for the "two views" slide.
+- **Both:** terminal `r` = outcome for the learner (+1/0/−1). Mask illegal actions with `−1e9`, not `−inf`. Select the terminal target with `torch.where` so NaNs can't leak in.
+
+**D4. Evaluation needs opening randomization.** Two deterministic greedy policies play exactly two distinct games (one per color). All evaluation games start from a fixed **opening bank**, and each opening is played with both colors.
+
+**D5. "Self-play win rate" = current network vs. the previous checkpoint**, from the opening bank, greedy play. This is the number a practitioner would watch. (Latest vs itself is trivially 50%.)
+
+**D6. Fairness.** All four conditions use identical hyperparameters, game budgets, and gradient-step budgets. Tune shared knobs only far enough that the **naive pilots learn**, and never tune per condition.
+
+**D7. The demo is fully static: inference runs in the browser** (ONNX + `onnxruntime-web`, rules ported to TypeScript, hosted on GitHub Pages). **Your server is for training compute, not hosting.**
+
+**D8. Checkpoints have two jobs: training opponents (pool) and evaluation references (MADRID).** Keep every checkpoint from every run; they're ~0.5 MB each. Caveat: a pool agent was *trained against* its own checkpoints, so regret measured against its own history is biased in its favor. Always also report regret against a **common held-out reference set** (§4.7).
+
+---
+
+## 4. System spec
+
+### 4.1 Repo layout (`othello-rl`)
+
+```
+othello-rl/
+├── README.md
+├── pyproject.toml             # package + deps; `pip install -e ".[dev]"`
+├── Makefile                   # test / data / sweep-4x4 / sweep-6x6 / figures / demo
+├── .gitignore                 # runs/ *.pt .venv/ __pycache__/ node_modules/ web/dist/ docs/private/
+├── docs/
+│   ├── proposal.md
+│   ├── spec.md                # this file
+│   └── private/               # gitignored: course directions PDF, papers
+├── src/othello_rl/
+│   ├── engine.py              # rules only (no torch): bitboards, legal_mask, step, to_planes, D4 transforms
+│   ├── players.py             # Player protocol; Random, Greedy, Positional, NetPlayer
+│   ├── solver.py              # 4×4 full solve + π*; 6×6 endgame WLD solver
+│   ├── nets.py                # conv Q-network
+│   ├── replay.py              # buffer; random D4 transform at sample time
+│   ├── targets.py             # Double-DQN target; `target` = env | negamax (the sign)
+│   ├── selfplay.py            # batched games; cuts transitions per `target` (A: through opponent reply)
+│   ├── pool.py                # opponent sampling: `sampling` = naive | pool; loads from the run's ckpt/
+│   ├── train.py               # main loop: `python -m othello_rl.train --config ... --target ... --sampling ... --seed ...`
+│   ├── evaluate.py            # opening banks, matches, score + Wilson CI, cross-play
+│   ├── regret.py              # MADRID-style position regret (§4.7)
+│   ├── export.py              # ONNX, parity fixtures, demo JSON
+│   ├── config.py              # dataclass config; YAML + CLI overrides
+│   └── rundir.py              # run dirs, meta.json, checkpoint paths, JSONL logs
+├── configs/
+│   ├── 4x4.yaml               # board-size defaults; target/sampling/seed come from the CLI
+│   └── 6x6.yaml
+├── data/                      # fixed benchmarks: generated once by a seeded script, committed
+│   ├── openings_4x4.json  openings_6x6.json
+│   ├── endgame6.jsonl
+│   ├── regret_positions_6x6.json
+│   ├── teaching_positions.json
+│   └── cache/                 # gitignored: solve4x4.npz (cheap to rebuild)
+├── scripts/                   # thin CLIs; logic lives in the package
+│   ├── build_data.py          # solve 4×4; build openings / endgame / regret / teaching sets
+│   ├── sweep.py               # launch the 2×2×seeds grid as parallel processes
+│   ├── analyze.py             # runs/ → figures/ + tables/
+│   └── export_demo.py         # chosen run → web/public/
+├── tests/
+│   ├── conftest.py            # NotImplementedError → "skipped: TODO" until Dec 1, so CI stays green
+│   ├── test_infra.py          # config + run-dir plumbing
+│   ├── test_engine.py         # perft, flips, passes, terminal, symmetry round-trip
+│   ├── test_solver.py
+│   ├── test_targets.py        # both modes: sign, forced pass, terminal, no NaNs
+│   ├── test_selfplay.py       # A-mode step: opponent reply ends game, auto-pass
+│   └── test_export.py         # torch vs ONNX outputs
+├── runs/                      # gitignored; rsync from the server
+│   └── e2-6x6/env-pool/seed0/{config.yaml, meta.json, log.jsonl, stdout.log, ckpt/g0005000.pt …}
+├── figures/  tables/          # written by analyze.py; committed (the report uses them)
+├── web/
+│   ├── package.json  vite.config.ts  index.html
+│   ├── src/{main.ts, engine.ts, agent.ts, ui/…}     # engine.ts mirrors engine.py's API names
+│   ├── public/{models/*.onnx, data/*.json}         # written by export_demo.py, committed
+│   └── tests/{engine.parity.test.ts, model.parity.test.ts, fixtures/}
+├── report/
+└── .github/workflows/
+    ├── tests.yml              # pytest + vitest on push
+    └── pages.yml              # build web/ and deploy to GitHub Pages
+```
+
+**Rules that keep this honest:**
+- **Data flows one way.** package → `runs/` → `analyze.py` → `figures/`, `tables/`; and `runs/` → `export_demo.py` → `web/public/`. Training never plots and analysis never trains, so you can re-plot on the laptop after an `rsync` without touching the server.
+- **The 2×2 lives in config, not in code forks.** `target` is read only in `selfplay.py` and `targets.py`; `sampling` is read only in `pool.py`. A grep then shows the conditions differ only there (useful in the report).
+- **`data/` is the benchmark.** Every run evaluates on identical, committed positions. Never regenerate it mid-experiment.
+- **Checkpoints are the pool.** `pool.py` loads snapshots from the run's own `ckpt/`, and `regret.py` uses the same files (D8). There is no separate storage.
+- **`meta.json`** per run: git commit hash, host, start time, torch version. Run directories are named `<exp>/<target>-<sampling>/seed<k>` (exp = `dev`, `e1-4x4`, `pilot-6x6`, `e2-6x6`) so `analyze.py` can glob them.
+
+### 4.2 Engine (`engine.py`)
+
+- Board size N ∈ {4, 6, 8}. State = `(me_bits, opp_bits)` as Python ints, from the side-to-move perspective, plus a color flag (display only).
+- Move generation by directional shifts with edge masks (±1, ±N, ±(N±1)).
+- API: `initial(n)`, `legal_mask(s)`, `step(s, a) -> (s', r, done)`, `score(s)`, `to_planes(s) -> float32[3,N,N]` (mine, theirs, legal), `transform(planes, action, k)` for the 8 D4 symmetries (pass maps to pass).
+- **Tests:** 8×8 perft from the start position (depths 1–6: 4, 12, 56, 244, 1396, 8200; confirm against a published table) · flips in all 8 directions · forced pass · double-pass terminal · symmetry round-trip · 10k random games without exceptions or illegal states.
+
+### 4.3 Reference opponents (`players.py`)
+
+| Player | Rule (ties broken uniformly at random) |
+|---|---|
+| Random | Uniform over legal moves |
+| Greedy | Maximize discs flipped |
+| Positional | Maximize square weight; ties → most flips |
+
+```
+6×6 weights                      4×4 weights
+ 100 -20  10  10 -20 100          100 -20 -20 100
+ -20 -50  -2  -2 -50 -20          -20   0   0 -20
+  10  -2   1   1  -2  10          -20   0   0 -20
+  10  -2   1   1  -2  10          100 -20 -20 100
+ -20 -50  -2  -2 -50 -20
+ 100 -20  10  10 -20 100
+```
+
+Sanity check: on 6×6, positional ≫ random and greedy > random.
+
+### 4.4 Solvers (`solver.py`)
+
+- **4×4 full solve:** memoized negamax over win/loss/draw values for every reachable position, giving the value of every (position, move) pair and an optimal policy π\*. The start position should match the published result (4×4 and 6×6 are both reported as second-player wins; confirm the source).
+- **4×4 eval set:** all reachable non-terminal positions with ≥2 legal moves whose moves don't all have the same value. Also compute **chance accuracy** (expected accuracy of a uniform-random mover) for a baseline line on plots.
+- **6×6 endgame solver:** alpha-beta WLD search with a null window, move ordering (corners first, then fewest opponent replies), and a transposition table.
+- **6×6 endgame test set:** 500 positions with 10–12 empties, sampled from games between randomized reference players, filtered as above. Solve once with `multiprocessing` and cache to `data/endgame6.jsonl`.
+
+### 4.5 DQN (`nets.py`, `replay.py`, `targets.py`)
+
+**Network** (small, ONNX-friendly, no batch norm): trunk of L conv layers (3×3, 64 channels, ReLU, same padding) → head: 1×1 conv to 2 channels → flatten → linear → N²+1 outputs → `tanh`. L = 3 for 4×4 and L = 4 for 6×6. About 120k parameters (~0.5 MB).
+
+**Loss (Double DQN, γ = 1).** The only line that differs between the two target types is the sign:
+```
+q_sa   = online(s)[a]
+a_star = argmax_{a' legal in s'} online(s')[a']      # select with online net
+q_next = target(s')[a_star]                          # evaluate with target net
+
+# N (negamax):                 s' = opponent to move
+y = where(done, r, -q_next)
+# A (opponent-as-environment): s' = learner to move again, after the opponent's reply
+y = where(done, r, +q_next)
+
+loss = huber(q_sa, y)
+```
+Replay tuple: `(planes_s, a, r, planes_s', legal_mask_s', done)`. At sample time, apply one random D4 transform consistently to `s`, `a`, `s'`, and the mask.
+
+**Target unit tests.**
+- N: (1) a terminal winning move gives y = +1 for the mover; (2) across a forced-pass state, the sign flips twice correctly; (3) no NaNs when `s'` is terminal.
+- A: (4) the opponent's reply ends the game → `r` is from the learner's perspective; (5) the opponent has no move → the learner moves again and `s'` is correct; (6) the learner has no move → the environment auto-passes.
+
+**4×4 Q-vs-solver MSE applies to N only.** A's Q estimates value against its training opponents, not the minimax value. Optimal-move accuracy applies to both.
+
+**Starting hyperparameters** (shared by all four conditions):
+
+| | 4×4 | 6×6 |
+|---|---|---|
+| Training games | 30k | ~200k (set from measured throughput, ≤ 6 h/run) |
+| Parallel games | 128 | 256 |
+| Replay capacity | 50k transitions | 300k transitions |
+| Batch / optimizer | 256 / Adam 3e-4 | same |
+| Gradient steps | 1 per 16 new learner transitions (each sampled ≈ 16×) | same |
+| Target net | Hard update every 1,000 gradient steps | same |
+| Exploration | ε linear 1.0 → 0.05 over first 20% of games, then 0.05 | same |
+| Loss / clipping | Huber, grad-norm clip 10 | same |
+| Eval + checkpoint every | 1k games (30 points) | 5k games (~40 points) |
+| Seeds | 5 | 3 |
+
+### 4.6 Training loop and opponent pool (`selfplay.py`, `pool.py`, `train.py`)
+
+- Run B games in parallel. Each ply, batch every position needing a given network into **one forward pass**.
+- The learner plays Black in half the games and White in the other half. Both sides play ε-greedy with the current ε. Only learner transitions are stored (D2).
+  - **N transition:** one learner ply, `s → s'` (opponent to move, possibly a forced-pass state).
+  - **A transition:** learner ply + the opponent's reply + any forced passes, `s → s'` (learner to move with a legal square, or terminal).
+- **Naive:** opponent = the current online network.
+- **Pool:** add a frozen copy every checkpoint interval (keep all). Each round, split the B games into 8 groups. Each group's opponent is the latest network with p = 0.5, otherwise one drawn uniformly from past snapshots. (MADRID uses checkpoints only *after* training, so it doesn't prescribe a training-time sampling rule. This 50/50 mix is a common default; if you want a cited rule, check how the TiZero paper, its ref. [29], samples its self-play opponents.)
+- Log one JSONL line per eval point: games, grad steps, wall time, ε, mean loss, mean max-Q, score vs each reference opponent (+ Wilson CI), self-play score (D5), 4×4 accuracy (+ Q-vs-solver MSE for N), 6×6 endgame accuracy.
+
+**Debugging ladder.** Get each rung working before the next. Rung 1 is also a useful "stationary MDP" reference point for the talk.
+1. A vs a **fixed random opponent**: plain single-agent DQN on a stationary MDP. It should beat random ≥ 95% quickly.
+2. A-naive self-play.
+3. N-naive self-play (check Q against solver values).
+4. Pool sampling for both.
+
+### 4.7 Evaluation protocol (`evaluate.py`, `regret.py`)
+
+**Standard metrics**
+- **Opening banks:** 4×4: all distinct positions after 2 plies. 6×6: 100 distinct positions after 4 random plies (fixed seed, saved). Each is played with both colors; agents play greedy (ε = 0).
+- **Score** = (wins + 0.5·draws) / games, with a 95% Wilson interval.
+- **Per-run summary:** final score (mean of last 3 eval points) · peak · max drawdown after the peak · forgetting events (drops > 10 points below the running max) · Spearman ρ between self-play score and score vs positional.
+- **Cross-play matrix:** 15 evenly spaced checkpoints per run, round robin over the opening bank.
+
+**Position-level checkpoint regret (adapted from MADRID, Samvelyan et al. 2024)**
+MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots, as reference policies. It finds starting states ("levels") where swapping a reference policy in for the target does better against the target than the target does against itself. Their regret, `V(π_R, π_T) − V(π_T, π_T)`, is **cross-play minus self-play**, which is the same idea as H3. The Othello adaptation:
+
+- **Level θ** = a board position with a side to move. `V^θ(X, T)` = final outcome (+1/0/−1) for the side to move when X plays that side and the target T plays the other. With greedy agents each V is a single deterministic game, so no repeats are needed (MADRID needed 4 because football is stochastic).
+- **Regret** `reg_R(θ) = V^θ(R, T) − V^θ(T, T)` ∈ {−2,…,2}. It is positive when a reference R handles θ better than T does.
+- **Reference sets** (D8):
+  - **Self-history:** every checkpoint from T's own run. Positive regret means *T forgot how to handle θ*. This is the direct forgetting measure, but it is biased toward pool agents.
+  - **Common held-out set:** the 3 heuristic players + every 5th checkpoint from all runs *except T's own*. This is the same set for every T and is the fair comparison across conditions.
+- **Positions:**
+  - 4×4: the full accuracy eval set (enumerable).
+  - 6×6: 2,000 positions sampled from games among reference players and checkpoints, spread across game phases (8–28 empties).
+  - No MAP-Elites search is needed at this scale. Keep MADRID's *grid* only for visualization: bin positions by (empties × disc differential).
+- **4×4 bonus (something MADRID can't do):** you have the true π\*, so compute **true regret** `V^θ(π*, T) − V^θ(T, T)` and check how much of it the checkpoint references recover. This answers the question "are checkpoints a good proxy for the optimal policy?"
+- **Summary numbers per final agent:** fraction of positions with any positive-regret reference · mean max-regret · regret by reference index.
+
+### 4.8 Experiments
+
+| ID | What | Runs | When |
+|---|---|---|---|
+| E0 | 4×4 supervised sanity check: fit the net to exact solver values (separates RL bugs from capacity issues) | 1 | Nov 24, only if stuck |
+| E1 | 4×4 2×2 | 4 × 5 seeds = 20 (minutes each) | Launch Nov 25 |
+| P | 6×6 pilots | 4 × 1 seed | Launch Nov 25 (runs over the holiday) |
+| E2 | 6×6 2×2 | 4 × 3 seeds = 12 | Launch Dec 1 |
+| E3 | Cross-play matrices | — | Dec 1 (4×4) / Dec 4 (6×6) |
+| E5 | Checkpoint regret (self-history + held-out; + true regret on 4×4) | — | Dec 2 (4×4) / Dec 4 (6×6) |
+| E4 | *(Could)* A-naive replay-buffer ablation (¼ size), or pool mix 80/20 | 3 seeds | Only with spare compute |
+
+**Compute:** On Tue Nov 24, measure games/s and gradient steps/s on your laptop and server, then fix the 6×6 game budget so one run takes ≤ 6 h. Run as many seeds in parallel on the server as it has cores for (`tmux`), and `rsync` `runs/` back. **Fallback:** if the 12 E2 runs can't finish by Thu Dec 3, run 3 seeds for the A pair and 2 seeds for the N pair (10 runs).
+
+### 4.9 Figures
+
+| ID | Figure | Used in |
+|---|---|---|
+| F1 | 4×4 optimal-move accuracy vs games: two panels (A, N), naive vs pool, seed bands + chance line | slides, report |
+| F2 | 6×6 score vs positional (and random/greedy in the appendix), same two-panel layout | slides, report |
+| **F3** | **Self-play score and external score on the same axes, flat line vs moving line** (headline figure) | slides, report, demo |
+| F4 | Cross-play heatmaps, naive vs pool | report (slides if striking) |
+| F5 | 6×6 endgame accuracy vs games | report |
+| F6 | Q-value heatmaps on 2–3 teaching positions across checkpoints | slides, demo |
+| **F7** | **Self-history regret by reference checkpoint index for final naive vs pool agents** (MADRID Fig. 4b analog), plus a regret grid over (empties × disc differential) (Fig. 6 analog) | slides, report |
+| F8 | 4×4: checkpoint-estimated vs true regret | report (slides if time) |
+| T1 | Summary table: §4.7 numbers, mean ± std across seeds, with the (pool − naive) gap per target type (H4) | slides, report |
+
+---
+
+## 5. Web demo spec
+
+### 5.1 What visitors can do
+
+1. **Play the agent** on a 6×6 board. Pick a color and pick an opponent snapshot: *Untrained → Early → Midway → Final*.
+2. **See what it's thinking.** A toggle overlays the agent's value estimate on each legal square as win probability `(Q+1)/2`.
+3. **Watch it learn.** A slider over training checkpoints updates (a) Q heatmaps on teaching positions and (b) the learning curve, with the flat self-play line (F3) and the current checkpoint marked.
+4. *(Could)* **Watch two snapshots play** each other, or play an A agent vs an N agent.
+5. **About:** a three-sentence summary, the MDP, and links to the code and report.
+
+### 5.2 Architecture
+
+```
+train.py ──► runs/.../ckpt/*.pt
+                │
+export.py ──────┼──► web/public/models/<snapshot>.onnx       (play)
+                ├──► web/public/data/manifest.json           (snapshot list + stats)
+                ├──► web/public/data/curves.json             (learning curves)
+                ├──► web/public/data/heatmaps.json           (Q for teaching positions × all checkpoints)
+                └──► web/tests/fixtures/*.json               (parity tests)
+
+web/ (Vite + TypeScript, no framework)
+  src/engine.ts   port of engine.py
+  src/agent.ts    onnxruntime-web session per snapshot, masked argmax
+  src/ui/*        board (SVG or canvas), controls, chart
+```
+
+- **Export:** `torch.onnx.export(model, dummy[1,3,6,6], ..., input_names=["planes"], output_names=["q"], dynamic_axes={"planes": {0: "b"}, "q": {0: "b"}})`. Masking happens in TypeScript.
+- **Runtime:** `onnxruntime-web` with `ort.env.wasm.wasmPaths` pointed at a pinned jsDelivr version. Load each snapshot lazily, only when selected.
+- Heatmaps and curves are precomputed JSON, so the slider needs no inference.
+- The agent plays greedy, breaking exact ties randomly, with a ~400 ms delay.
+
+`manifest.json` sketch (numbers are placeholders):
+```json
+{
+  "board_size": 6,
+  "condition": "A-pool",
+  "snapshots": [
+    {"id": "untrained", "label": "Untrained", "games": 0,      "model": "models/untrained.onnx", "score_vs_positional": 0.08},
+    {"id": "early",     "label": "Early",     "games": 15000,  "model": "models/early.onnx",     "score_vs_positional": 0.31},
+    {"id": "mid",       "label": "Midway",    "games": 60000,  "model": "models/mid.onnx",       "score_vs_positional": 0.55},
+    {"id": "final",     "label": "Final",     "games": 200000, "model": "models/final.onnx",     "score_vs_positional": 0.80}
+  ],
+  "teaching_positions": ["corner_vs_flips", "x_square_trap", "endgame_parity"]
+}
+```
+
+### 5.3 Snapshot and teaching-position selection
+
+- Use one seed from the condition with the highest final 6×6 score, and state in the About text which condition and that it's one seed.
+- **Untrained** = game 0. **Early** = first checkpoint with ≥ 60% vs random. **Midway** = first checkpoint with ≥ 50% vs positional. **Final** = last checkpoint.
+- Teaching positions should have ≤ 12 empties so the endgame solver can confirm the correct move.
+
+### 5.4 Correctness
+
+- **Engine parity:** Python writes 500 random games (legal masks + resulting boards at every ply). The TS engine must match exactly.
+- **Model parity:** Python writes 100 positions with their Q-vectors. ORT-web output must match within 1e-4.
+- Run both with `vitest` in GitHub Actions before every deploy.
+
+### 5.5 Hosting
+
+- Create a repo `othello-rl` and deploy `web/dist` with the official GitHub Pages Action. If your portfolio is the `<username>.github.io` repo with your custom domain, any other repo with Pages enabled is served at `https://<your-domain>/<repo-name>/`. Set Vite `base: '/<repo-name>/'`.
+- *Fallback:* copy `web/dist` into a folder of your portfolio repo.
+- Link it from the portfolio home page. Test on desktop Chrome/Safari and on a phone (tap-to-move, fits at 360 px).
+- Record a 60–90 s screen capture as a presentation backup.
+
+---
+
+## 6. Timeline
+
+Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17.
+
+### Week 1 — Foundations and 4×4 (Nov 18–25)
+
+**Wed Nov 18** (~3 h)
+- [ ] Ask the instructor about presentation length/format and report length/format.
+- [ ] Create repo and environment (`torch numpy pytest pyyaml matplotlib scipy`), set up the §4.1 layout.
+- [ ] Engine: bitboards, move generation, flips.
+
+**Thu Nov 19** (~3 h)
+- [ ] Engine: passes, terminal, scoring, `to_planes`, D4 transforms.
+- [ ] Engine tests (§4.2), all passing.
+
+**Fri Nov 20** (~3–4 h)
+- [ ] Random / greedy / positional players + network-player wrapper.
+- [ ] Batched game runner (any two players, many games at once).
+- [ ] Eval harness: opening banks, both colors, score + Wilson CI. Sanity-check opponent strengths.
+
+**Sat Nov 21** (~3 h)
+- [ ] 4×4 full solver, π\*, eval set, and chance accuracy; check the start-position value.
+
+**Mon Nov 23** (~4–5 h)
+- [ ] DQN core: network, replay buffer, Double-DQN loss with a `target: negamax | env` switch, masking, symmetry at sample time.
+- [ ] A-mode environment step (opponent replies + auto-passes).
+- [ ] Target unit tests for both modes (§4.5).
+
+**Tue Nov 24** (~4–5 h)
+- [ ] Debugging ladder rungs 1–3 on 4×4 (§4.6), with JSONL logging.
+- [ ] N must show Q correlating with solver values. Both must show accuracy clearly above chance and ≥ 90% vs random. Run E0 if stuck.
+- [ ] Measure throughput on laptop and server; fix the 6×6 budget and whether 12 runs fit (§4.8 fallback).
+
+**Wed Nov 25** (~4 h) — **M1**
+- [ ] Opponent pool, checkpointing, YAML configs, run directories with commit hash.
+- [ ] Launch **E1** (4×4 2×2, 20 runs).
+- [ ] Launch **6×6 pilots** (4 runs) on the server before leaving for the holiday.
+
+**Thu Nov 26 – Sat Nov 28** — Thanksgiving (optional ~2 h Sat)
+- [ ] *(optional)* Start the 6×6 endgame solver or the TS engine port. Both are off the training critical path.
+- [ ] Glance at pilot logs; don't change training code.
+
+### Week 2 — 6×6 experiments and demo (Nov 30 – Dec 5)
+
+**Mon Nov 30** (~4 h)
+- [ ] Review E1 and the pilots. If 6×6 isn't learning, change at most 2 shared knobs (lr, budget, ε schedule), the same for all four conditions.
+- [ ] 6×6 endgame solver + 500-position test set, cached.
+
+**Tue Dec 1** (~4 h) — **M2: experiment code freeze**
+- [ ] Launch **E2** (6×6 2×2, 12 runs, endgame accuracy in eval).
+- [ ] Analysis scripts: seed-band curves, §4.7 summary numbers, Spearman ρ, H4 gap.
+- [ ] Cross-play script; run E3 on 4×4.
+
+**Wed Dec 2** (~4–5 h)
+- [ ] `regret.py`: self-history + held-out references; true regret with π\* on 4×4. Run E5 on 4×4.
+- [ ] Finalize the 4×4 versions of F1, F3, F7, F8, and T1.
+
+**Thu Dec 3** (~4–5 h)
+- [ ] Web: scaffold Vite + TS, port the engine, engine parity test passing.
+- [ ] `export.py`: ONNX + Q fixtures; model parity passing (use pilot checkpoints for now).
+- [ ] Play view: board, color choice, snapshot picker, pass/game-over handling, Q overlay.
+- [ ] **Cut rule:** if play isn't working by tonight, "Watch it learn" moves to Dec 11–16 and the talk uses a static F3.
+
+**Fri Dec 4** (~4–5 h)
+- [ ] E2 done: 6×6 F2, F4, F5, T1; run E5 on 6×6 → F7.
+- [ ] Pick snapshots and teaching positions (§5.3); export final ONNX + `manifest/curves/heatmaps.json`.
+
+**Sat Dec 5** (~3–4 h) — **M3**
+- [ ] Deploy the play view to GitHub Pages under your domain; link it from the portfolio.
+- [ ] "Watch it learn" view if time allows (otherwise Dec 11–16).
+- [ ] Test desktop + phone; record the backup video.
+
+### Week 3 — Presentation (Dec 7–10)
+
+**Mon Dec 7** (~4 h)
+- [ ] Draft the deck from §8 with all figures in.
+
+**Tue Dec 8** (~3 h)
+- [ ] Finish the deck; full timed rehearsal; cut to time.
+
+**Wed Dec 9** (~2 h) — buffer day
+- [ ] Second rehearsal; QR code to the demo; backup video embedded; finish anything that slipped.
+
+**Thu Dec 10**
+- [ ] Present. Note the questions you get for the report's discussion section.
+
+### Week 4 — Report + demo polish (Dec 11–17)
+
+- [ ] **Fri Dec 11:** Outline; Method and Setup sections (adapt §3–4 of this spec).
+- [ ] **Sat Dec 12:** Results with figures and captions. Finish "Watch it learn" if it slipped.
+- [ ] **Mon Dec 14:** Intro, related work (MADRID, TiZero, AlphaGo/AlphaZero opponent handling), discussion, limitations.
+- [ ] **Tue Dec 15:** Full draft; appendix (hyperparameters, engine/solver validation, demo link).
+- [ ] **Wed Dec 16:** Revise using presentation Q&A; proofread; repo README; link the report from the demo's About page.
+- [ ] **Thu Dec 17:** Submit.
+
+No new experiments in report week. Extra seeds may run in the background if they finish by Dec 14.
+
+---
+
+## 7. Risks and cut rules
+
+| Risk | Early signal | Response |
+|---|---|---|
+| Sign/pass bug in N targets | 4×4 Q doesn't correlate with solver values | Target unit tests; debugging ladder; E0. If N still isn't right by Nov 25, launch the A runs anyway and finish N on Nov 30 (it's the contrast arm) |
+| DQN instability | Loss spikes, Q saturates at ±1 | Lower lr, more frequent target updates, confirm grad clipping; never per condition |
+| 6×6 too slow / 12 runs don't fit | Measured budget > 6 h/run or too few server cores | Shrink the net to 32 channels, cut the game budget, use the §4.8 seed fallback |
+| 6×6 not learning by Dec 1 | Pilot score vs positional < 50% | 4×4 becomes the main result; present 6×6 as preliminary |
+| Pool ≈ naive everywhere | Overlapping seed bands in both rows | That's a result: lean on F3, F7, and the D1 framing (the replay buffer is already an implicit pool) |
+| Demo eats presentation time | Not playable by Dec 3 | Play view only for the talk; the rest moves to Dec 11–16 |
+| Server unavailable | — | Run on the laptop overnight with a reduced 6×6 budget and the seed fallback |
+
+**Slip rule:** if any milestone slips by more than one day, apply the matching cut immediately rather than borrowing from the Dec 7–9 presentation days.
+
+---
+
+## 8. Presentation outline (adjust to the time limit)
+
+1. **Hook:** F3. "This line says the agent is stuck. This one says it's improving. Which do you believe?" Put the demo QR code up.
+2. **Self-play as non-stationary RL:** the opponent changes with every update; replayed data comes from older players.
+3. **Two views of self-play (D1):** opponent-as-environment (learn a best response; passes are just dynamics) vs negamax (learn the minimax value; passes need explicit sign flips). Use a small diagram. Prediction: the pool should matter more for the first view.
+4. **Setup:** the 2×2, boards, reference opponents, solvers as ground truth.
+5. **4×4 results:** F1 (accuracy against exact play) + T1.
+6. **6×6 results:** F2, H4 gap.
+7. **What self-play hides:** F3 + F7. Earlier checkpoints beat the final agent from specific positions, and self-play score never shows it (MADRID's cross-play-minus-self-play idea).
+8. **Takeaways + demo:** "Watch it learn" (F6 or live demo).
+
+## 9. Report outline
+
+Abstract · 1 Introduction and question · 2 Background and related work (self-play, DQN, opponent pools, MADRID checkpoint regret) · 3 Formulation (MDP, both views, targets, passes) · 4 Method (network, Double DQN, symmetries, pool) · 5 Experimental setup (2×2, boards, seeds, budgets, opponents, solvers, metrics, regret) · 6 Results · 7 Discussion (what self-play metrics hide; when pools matter) · 8 Limitations and future work (8×8, prioritized pool sampling, search, MAP-Elites over positions) · 9 Conclusion · Appendix (hyperparameters, validation, demo link)
+
+## 10. References
+
+- Samvelyan, Paglieri, Jiang, Parker-Holder, Rocktäschel. *Multi-Agent Diagnostics for Robustness via Illuminated Diversity* (MADRID). AAMAS 2024. arXiv:2401.13460. (Local PDF kept out of the repo.)
+- Lin, Huang, Pearce, Chen, Tu. *TiZero: Mastering Multi-Agent Football with Curriculum Learning and Self-Play.* AAMAS 2023. (MADRID's ref. [29]; source of the checkpoints MADRID evaluates.)
+
+## 11. Open items
+
+- [ ] Presentation length/format and report length/format (instructor).
+- [ ] Server specs: CPU cores, GPU? These decide whether all 12 E2 runs fit (Nov 24).
+- [ ] Is the portfolio the `<username>.github.io` repo? This determines the demo URL path (§5.5).
