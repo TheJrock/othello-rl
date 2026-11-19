@@ -1,10 +1,9 @@
 import { defineConfig } from "vitest/config";
 
-// If the portfolio is the <username>.github.io repo on a custom domain, this repo's Pages site is
-// served at https://<your-domain>/othello-rl/ (spec §5.5). Change `base` if the repo is renamed or
-// the build is copied into a folder of the portfolio repo instead.
+// Served from the root of its own subdomain, https://othello.johnnygoodlad.dev/ (spec §5.5), so the
+// base path is "/". It would only be "/othello-rl/" if the site were served from a repo subpath.
 export default defineConfig({
-  base: "/othello-rl/",
+  base: "/",
   test: {
     include: ["tests/**/*.test.ts"],
   },

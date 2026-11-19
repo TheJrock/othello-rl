@@ -61,4 +61,4 @@ Two rules keep the comparison honest: `target` is only read in `selfplay.py` and
 
 ## Demo deployment
 
-`.github/workflows/pages.yml` builds `web/` and deploys it to GitHub Pages. In the repo's Settings → Pages, set Source to "GitHub Actions", then run the workflow from the Actions tab. If the portfolio is the `<username>.github.io` repo on a custom domain, the demo is served at `https://<your-domain>/othello-rl/`.
+`.github/workflows/pages.yml` builds `web/` and deploys it to GitHub Pages at **https://othello.johnnygoodlad.dev** (Pages source: GitHub Actions; custom domain set in the repo's Pages settings; DNS `CNAME othello → thejrock.github.io`). Run it from the Actions tab, or enable its `push` trigger.

@@ -359,7 +359,9 @@ web/ (Vite + TypeScript, no framework)
 
 ### 5.5 Hosting
 
-- Create a repo `othello-rl` and deploy `web/dist` with the official GitHub Pages Action. If your portfolio is the `<username>.github.io` repo with your custom domain, any other repo with Pages enabled is served at `https://<your-domain>/<repo-name>/`. Set Vite `base: '/<repo-name>/'`.
+- Deploy `web/dist` from the `othello-rl` repo with the official GitHub Pages Action, on the subdomain **`othello.johnnygoodlad.dev`**. The portfolio (`johnnygoodlad.dev` repo) is a project site with its own custom domain rather than the `<username>.github.io` user site, so other repos are *not* served under `johnnygoodlad.dev/<repo>/` automatically. A subdomain keeps the demo independent of the portfolio repo. Vite `base` is `/`.
+- Setup order (custom domain in GitHub *before* DNS, which prevents subdomain takeover): repo Settings → Pages → Custom domain `othello.johnnygoodlad.dev` → Namecheap Advanced DNS: `CNAME` host `othello` → `thejrock.github.io.` → wait for the certificate → tick Enforce HTTPS. No `CNAME` file is needed with Actions deploys.
+- `.dev` is HSTS-preloaded, so browsers will only load the subdomain over HTTPS. Until GitHub issues its certificate, it shows a certificate error, so don't link it from the portfolio until HTTPS works.
 - *Fallback:* copy `web/dist` into a folder of your portfolio repo.
 - Link it from the portfolio home page. Test on desktop Chrome/Safari and on a phone (tap-to-move, fits at 360 px).
 - Record a 60–90 s screen capture as a presentation backup.
@@ -505,4 +507,4 @@ Abstract · 1 Introduction and question · 2 Background and related work (self-p
 
 - [ ] Presentation length/format and report length/format (instructor).
 - [ ] Server specs: CPU cores, GPU? These decide whether all 12 E2 runs fit (Nov 24).
-- [ ] Is the portfolio the `<username>.github.io` repo? This determines the demo URL path (§5.5).
+- [x] Demo URL: `othello.johnnygoodlad.dev` (portfolio is a project site with a custom domain; §5.5).
