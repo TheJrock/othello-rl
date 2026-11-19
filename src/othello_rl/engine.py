@@ -160,20 +160,36 @@ def flips(s: State, a: int) -> int:
     return flipped
 
 
+def _swap(s: State) -> State:
+    """The same board with the other side to move (a pass)."""
+    return State(s.opp, s.me, s.n, not s.black_to_move)
+
+
 def legal_mask(s: State) -> np.ndarray:
     """Bool array of shape (n*n + 1,). The pass entry is True only when no square is legal and the
     game is not over. All False for a terminal state."""
-    raise NotImplementedError("engine.legal_mask")
+    n = s.n
+    mask = np.zeros(n * n + 1, dtype=bool)
+    moves = legal_moves(s)
+    if moves:
+        while moves:
+            low = moves & -moves  # lowest set bit
+            mask[low.bit_length() - 1] = True
+            moves ^= low
+    elif legal_moves(_swap(s)):
+        mask[n * n] = True  # forced pass
+    return mask
 
 
 def is_terminal(s: State) -> bool:
     """True when neither side has a legal square."""
-    raise NotImplementedError("engine.is_terminal")
+    return legal_moves(s) == 0 and legal_moves(_swap(s)) == 0
 
 
 def outcome(s: State) -> int:
     """For a terminal state: +1 / 0 / −1 for the side to move, by disc count."""
-    raise NotImplementedError("engine.outcome")
+    diff = s.me.bit_count() - s.opp.bit_count()
+    return (diff > 0) - (diff < 0)
 
 
 def step(s: State, a: int) -> tuple[State, float, bool]:
@@ -184,8 +200,24 @@ def step(s: State, a: int) -> tuple[State, float, bool]:
             forced-pass state, i.e. the next mover has no square but the game is not over.
       done  is_terminal(s2)
       r     for the player who just moved: −outcome(s2) if done, else 0.0
+
+    Raises ValueError for an illegal action, including a pass while a square is legal or once the
+    game is over.
     """
-    raise NotImplementedError("engine.step")
+    n = s.n
+    if a == n * n:
+        if legal_moves(s):
+            raise ValueError("pass is only legal when no square is")
+        s2 = _swap(s)
+        if legal_moves(s2) == 0:
+            raise ValueError("the game is over; no action is legal")
+        return s2, 0.0, False  # the opponent has a square, so the game goes on
+    f = flips(s, a)
+    if f == 0:
+        raise ValueError(f"square {a} is not a legal move")
+    s2 = State(s.opp & ~f, s.me | f | (1 << a), n, not s.black_to_move)
+    done = is_terminal(s2)
+    return s2, (float(-outcome(s2)) if done else 0.0), done
 
 
 def to_planes(s: State) -> np.ndarray:
@@ -221,4 +253,6 @@ def inverse_symmetry(k: int) -> int:
 def perft(s: State, depth: int) -> int:
     """Number of leaf nodes `depth` plies below s, counting a forced pass as a ply. Terminal
     states count as leaves. Used to validate move generation against published 8×8 values."""
-    raise NotImplementedError("engine.perft")
+    if depth == 0 or is_terminal(s):
+        return 1
+    return sum(perft(step(s, int(a))[0], depth - 1) for a in np.flatnonzero(legal_mask(s)))

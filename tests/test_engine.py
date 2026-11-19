@@ -81,7 +81,9 @@ def test_flips_in_all_eight_directions():
     s2, r, done = E.step(s, a)
     assert s2.opp == s.me | expected | (1 << a)  # the mover's discs, now seen from the other side
     assert s2.me == s.opp & ~expected
-    assert (r, done) == (0.0, False)
+    # Those were all of O's discs: a wipeout ends the game at once, and the mover wins.
+    assert s2.me == 0
+    assert (r, done) == (1.0, True)
 
 
 def test_no_wraparound():
