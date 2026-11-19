@@ -44,20 +44,83 @@ class State:
     black_to_move: bool = True
 
 
+# --- direction tables ---------------------------------------------------------------------------
+# Moving one square is a bit shift: +1 east, +n south, +n+1 south-east, and so on (negative = right
+# shift). A shift with an east component would carry a disc in column n-1 into column 0 of the next
+# row, so the source is masked to drop that column first; likewise column 0 for west. Vertical
+# overflow needs no pre-mask: bits shifted past n*n are removed when the result is ANDed with a
+# bitboard that lives on the board (opp, me, or the empty squares).
+
+
+def _full(n: int) -> int:
+    return (1 << (n * n)) - 1
+
+
+def _directions(n: int) -> tuple[tuple[int, int], ...]:
+    """(shift, source pre-mask) for the 8 directions on an n×n board."""
+    full = _full(n)
+    col0 = sum(1 << square(r, 0, n) for r in range(n))
+    not_first_col = full & ~col0  # sources allowed to move west
+    not_last_col = full & ~(col0 << (n - 1))  # sources allowed to move east
+    return (
+        (+1, not_last_col),  # east
+        (-1, not_first_col),  # west
+        (+n, full),  # south
+        (-n, full),  # north
+        (+n + 1, not_last_col),  # south-east
+        (+n - 1, not_first_col),  # south-west
+        (-n + 1, not_last_col),  # north-east
+        (-n - 1, not_first_col),  # north-west
+    )
+
+
+_FULL = {n: _full(n) for n in SIZES}
+_DIRS = {n: _directions(n) for n in SIZES}
+
+
+def _shift(x: int, d: int) -> int:
+    return x << d if d > 0 else x >> -d
+
+
+# --- construction and parsing -------------------------------------------------------------------
+
+
 def initial(n: int) -> State:
     """Standard start. With c = n // 2: White on (c-1, c-1) and (c, c), Black on (c-1, c) and (c, c-1).
     Black moves first, so `me` is Black's bitboard."""
-    raise NotImplementedError("engine.initial")
+    if n not in SIZES:
+        raise ValueError(f"board size must be one of {SIZES}, got {n}")
+    c = n // 2
+    black = (1 << square(c - 1, c, n)) | (1 << square(c, c - 1, n))
+    white = (1 << square(c - 1, c - 1, n)) | (1 << square(c, c, n))
+    return State(black, white, n, True)
 
 
 def from_string(text: str, black_to_move: bool = True) -> State:
     """Parse a board string (see module docstring). n is inferred from the number of squares."""
-    raise NotImplementedError("engine.from_string")
+    cells = "".join(text.split())
+    n = int(round(len(cells) ** 0.5))
+    if n * n != len(cells) or n not in SIZES:
+        raise ValueError(f"expected 16, 36 or 64 squares, got {len(cells)}")
+    me = opp = 0
+    for i, ch in enumerate(cells):
+        if ch == "X":
+            me |= 1 << i
+        elif ch == "O":
+            opp |= 1 << i
+        elif ch != ".":
+            raise ValueError(f"unexpected character {ch!r} in board string")
+    return State(me, opp, n, black_to_move)
 
 
 def to_string(s: State) -> str:
     """Inverse of from_string: n lines of n characters, no trailing newline."""
-    raise NotImplementedError("engine.to_string")
+    n = s.n
+    cells = ["X" if s.me >> i & 1 else "O" if s.opp >> i & 1 else "." for i in range(n * n)]
+    return "\n".join("".join(cells[r * n : (r + 1) * n]) for r in range(n))
+
+
+# --- move generation ----------------------------------------------------------------------------
 
 
 def legal_moves(s: State) -> int:
@@ -66,12 +129,35 @@ def legal_moves(s: State) -> int:
     Shift in all 8 directions with edge masks so discs never wrap from the end of one row to the
     start of the next (tests/test_engine.py::test_no_wraparound), and mask every result to the
     n*n board bits."""
-    raise NotImplementedError("engine.legal_moves")
+    n, me, opp = s.n, s.me, s.opp
+    empty = _FULL[n] & ~(me | opp)
+    moves = 0
+    for d, pre in _DIRS[n]:
+        # Squares reachable from one of my discs through a run of opponent discs. A run between my
+        # disc and an empty square holds at most n-2 discs: one step here plus n-3 extensions.
+        run = _shift(me & pre, d) & opp
+        for _ in range(n - 3):
+            run |= _shift(run & pre, d) & opp
+        moves |= _shift(run & pre, d) & empty
+    return moves
 
 
 def flips(s: State, a: int) -> int:
     """Bitboard of opponent discs flipped by playing square `a` (0 if `a` is not a legal square)."""
-    raise NotImplementedError("engine.flips")
+    n, me, opp = s.n, s.me, s.opp
+    if not 0 <= a < n * n or (me | opp) >> a & 1:
+        return 0
+    move = 1 << a
+    flipped = 0
+    for d, pre in _DIRS[n]:
+        line = 0
+        x = _shift(move & pre, d)
+        while x & opp:
+            line |= x
+            x = _shift(x & pre, d)
+        if x & me:
+            flipped |= line
+    return flipped
 
 
 def legal_mask(s: State) -> np.ndarray:
