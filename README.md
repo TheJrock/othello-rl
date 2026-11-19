@@ -13,6 +13,24 @@ The experiment is a 2×2 design on 4×4 and 6×6 boards:
 
 Agents are scored against random/greedy/positional players and exact solvers, and with a MADRID-style checkpoint-regret analysis. A web demo lets visitors play training snapshots. The full plan and timeline are in [docs/spec.md](docs/spec.md).
 
+## Status
+
+*Updated Nov 19, 2026.*
+
+| Milestone | Target | Status |
+|---|---|---|
+| Project scaffold: package layout, configs, run directories, test suite, CI | Nov 18 | Done |
+| Demo hosting at [othello.johnnygoodlad.dev](https://othello.johnnygoodlad.dev), deployed from this repo | Dec 5 | Done (placeholder page until M3) |
+| Report skeleton in `report/` (NeurIPS style) | — | Done |
+| Othello engine (bitboards, move generation, passes) and its tests | Nov 19 | Up next |
+| **M1:** 4×4 DQN learning under both target types, checked against an exact solver; 4×4 sweep launched | Nov 25 | Planned |
+| **M2:** experiment code frozen; final 6×6 runs launched | Dec 1 | Planned |
+| **M3:** all figures final; playable demo live | Dec 5 | Planned |
+| Final presentation | Dec 10 | Planned |
+| Final report | Dec 17 | Planned |
+
+**Results so far:** none yet. The first 4×4 results come with M1.
+
 ## Setup
 
 ```bash
