@@ -3,6 +3,7 @@
     python scripts/build_data.py solve4x4
     python scripts/build_data.py openings --board 4
     python scripts/build_data.py openings --board 6
+    python scripts/build_data.py openings --board 8
     python scripts/build_data.py endgame6 --workers 8
     python scripts/build_data.py regret-positions
 
@@ -21,7 +22,8 @@ from pathlib import Path
 from othello_rl import evaluate, regret, solver
 
 DATA = Path(__file__).resolve().parents[1] / "data"
-OPENING_DEFAULTS = {4: (2, None), 6: (4, 100)}  # board -> (plies, count); None = every distinct position
+# board -> (plies, count); None = every distinct position
+OPENING_DEFAULTS = {4: (2, None), 6: (4, 100), 8: (4, 100)}
 
 
 def _guard(path: Path, force: bool) -> Path:

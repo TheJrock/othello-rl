@@ -1,19 +1,21 @@
 # Othello Self-Play — Project Spec & Timeline
 
-Companion to `docs/proposal.md` · Written Wed Nov 18, 2026 · Rev. 3 (2×2 design, MADRID-style checkpoint regret, repo scaffold)
+Companion to `docs/proposal.md` · Written Wed Nov 18, 2026 · Rev. 4 (2×2 design, MADRID-style checkpoint regret, repo scaffold; Nov 19: gated 8×8 add-on, D9 and §4.8)
 
 | Date | Milestone |
 |---|---|
-| **Wed Nov 25** | **M1** — 4×4 DQN learning under both target types and checked against the exact solver; 4×4 sweep and 6×6 pilot runs launched to run over Thanksgiving |
+| Tue Nov 24 | 8×8 gate 1: throughput (§4.8) |
+| **Wed Nov 25** | **M1** — 4×4 DQN learning under both target types and checked against the exact solver; 4×4 sweep and 6×6 pilot runs launched to run over Thanksgiving (plus the 8×8 pilot if gate 1 passed) |
 | Thu Nov 26 – Sat Nov 28 | Thanksgiving: light days, no new code on the critical path |
-| **Tue Dec 1** | **M2** — Experiment code frozen; final 6×6 runs launched |
+| Mon Nov 30 | 8×8 gate 2: pilot review (§4.8) |
+| **Tue Dec 1** | **M2** — Experiment code frozen; final 6×6 runs launched (plus the 8×8 pair if gate 2 passed) |
 | **Sat Dec 5** | **M3** — All figures final; demo's play view live on your domain |
 | **Thu Dec 10** | Presentation |
 | **Thu Dec 17** | Report due |
 
 Sundays are left unscheduled as rest/buffer.
 
-**Done by Dec 10 means:** (1) 4×4 and 6×6 results for the 2×2 design (target type × opponent sampling) across seeds, (2) the self-play-win-rate-vs-external-metric figure and the checkpoint-regret figure, (3) a rehearsed deck, (4) a playable demo on your portfolio domain.
+**Done by Dec 10 means:** (1) 4×4 and 6×6 results for the 2×2 design (target type × opponent sampling) across seeds, (2) the self-play-win-rate-vs-external-metric figure and the checkpoint-regret figure, (3) a rehearsed deck, (4) a playable demo on your portfolio domain. 8×8 is not part of this list. It is a gated Could (D9, §4.8).
 
 ---
 
@@ -45,8 +47,8 @@ A null result on H1/H2 is still a valid finding ("at this scale, naive self-play
 |---|---|
 | **Must** (Dec 10) | Engine + tests · random/greedy/positional opponents · 4×4 exact solver · DQN with both target types · 2×2 on 4×4 (5 seeds) and 6×6 (3 seeds; fallback in §4.8) · external-metric and self-play curves · demo play view · deck |
 | **Should** | MADRID-style checkpoint regret analysis (§4.7) · 6×6 endgame-accuracy metric · cross-play matrices · "Watch it learn" view (can slip into Dec 11–16) |
-| **Could** | Snapshot-vs-snapshot autoplay in the demo · let demo visitors pick an A or N agent · 4×4 "perfect play" coach mode · replay-buffer-size ablation for A-naive (§3 D1) · pool-mix ablation (80/20) |
-| **Won't** | 8×8 (future work) · MAP-Elites/CMA-ME search. Small Othello position sets can be enumerated or sampled directly (§4.7). |
+| **Could** | **8×8 A pair (A-naive vs A-pool, 1 seed each), only if both gates pass (D9, §4.8)** · snapshot-vs-snapshot autoplay in the demo · let demo visitors pick an A or N agent · 4×4 "perfect play" coach mode · replay-buffer-size ablation for A-naive (§3 D1) · pool-mix ablation (80/20) |
+| **Won't** | Anything on 8×8 beyond the gated A pair: the N row, more seeds, cross-play, regret, endgame accuracy (future work) · MAP-Elites/CMA-ME search. Small Othello position sets can be enumerated or sampled directly (§4.7). |
 
 ---
 
@@ -81,6 +83,13 @@ The proposal's MDP row ("opponent's policy is part of the environment") describe
 
 **D8. Checkpoints have two jobs: training opponents (pool) and evaluation references (MADRID).** Keep every checkpoint from every run; they're ~0.5 MB each. Caveat: a pool agent was *trained against* its own checkpoints, so regret measured against its own history is biased in its favor. Always also report regret against a **common held-out reference set** (§4.7).
 
+**D9. 8×8 is an add-on, not a third board in the design.** It asks one question: does the 6×6 A-row result (pool vs naive) still hold on the full board? It runs only the A pair, because A is where the pool's mechanism operates (D1). With one seed per arm it is illustrative and never evidence for H1–H4 on its own. It runs only if it costs nothing on the critical path:
+- It runs on hardware E2 doesn't use, such as the laptop GPU (`--device mps`).
+- It needs no new code after M2, only `configs/8x8.yaml`.
+- It never takes time from Dec 7–9.
+
+Two gates decide whether it runs at all (§4.8). Code costs almost nothing extra because the engine, players, network, and web engine are all size-generic. Compute is the limit.
+
 ---
 
 ## 4. System spec
@@ -91,7 +100,7 @@ The proposal's MDP row ("opponent's policy is part of the environment") describe
 othello-rl/
 ├── README.md
 ├── pyproject.toml             # package + deps; `pip install -e ".[dev]"`
-├── Makefile                   # test / data / sweep-4x4 / sweep-6x6 / figures / demo
+├── Makefile                   # test / data / sweep-4x4 / sweep-6x6 / sweep-8x8 / figures / demo
 ├── .gitignore                 # runs/ *.pt .venv/ __pycache__/ node_modules/ web/dist/ docs/private/
 ├── docs/
 │   ├── proposal.md
@@ -114,9 +123,10 @@ othello-rl/
 │   └── rundir.py              # run dirs, meta.json, checkpoint paths, JSONL logs
 ├── configs/
 │   ├── 4x4.yaml               # board-size defaults; target/sampling/seed come from the CLI
-│   └── 6x6.yaml
+│   ├── 6x6.yaml
+│   └── 8x8.yaml               # gated add-on (D9)
 ├── data/                      # fixed benchmarks: generated once by a seeded script, committed
-│   ├── openings_4x4.json  openings_6x6.json
+│   ├── openings_4x4.json  openings_6x6.json  openings_8x8.json
 │   ├── endgame6.jsonl
 │   ├── regret_positions_6x6.json
 │   ├── teaching_positions.json
@@ -153,7 +163,7 @@ othello-rl/
 - **The 2×2 lives in config, not in code forks.** `target` is read only in `selfplay.py` and `targets.py`; `sampling` is read only in `pool.py`. A grep then shows the conditions differ only there (useful in the report).
 - **`data/` is the benchmark.** Every run evaluates on identical, committed positions. Never regenerate it mid-experiment.
 - **Checkpoints are the pool.** `pool.py` loads snapshots from the run's own `ckpt/`, and `regret.py` uses the same files (D8). There is no separate storage.
-- **`meta.json`** per run: git commit hash, host, start time, torch version. Run directories are named `<exp>/<target>-<sampling>/seed<k>` (exp = `dev`, `e1-4x4`, `pilot-6x6`, `e2-6x6`) so `analyze.py` can glob them.
+- **`meta.json`** per run: git commit hash, host, start time, torch version. Run directories are named `<exp>/<target>-<sampling>/seed<k>` (exp = `dev`, `e1-4x4`, `pilot-6x6`, `e2-6x6`, `pilot-8x8`, `e6-8x8`) so `analyze.py` can glob them.
 
 ### 4.2 Engine (`engine.py`)
 
@@ -178,9 +188,19 @@ othello-rl/
   10  -2   1   1  -2  10          100 -20 -20 100
  -20 -50  -2  -2 -50 -20
  100 -20  10  10 -20 100
+
+8×8 weights (the standard table; gated add-on, D9)
+ 100 -20  10   5   5  10 -20 100
+ -20 -50  -2  -2  -2  -2 -50 -20
+  10  -2  -1  -1  -1  -1  -2  10
+   5  -2  -1  -1  -1  -1  -2   5
+   5  -2  -1  -1  -1  -1  -2   5
+  10  -2  -1  -1  -1  -1  -2  10
+ -20 -50  -2  -2  -2  -2 -50 -20
+ 100 -20  10   5   5  10 -20 100
 ```
 
-Sanity check: on 6×6, positional ≫ random and greedy > random.
+Sanity check: on 6×6 (and 8×8), positional ≫ random and greedy > random.
 
 ### 4.4 Solvers (`solver.py`)
 
@@ -191,7 +211,7 @@ Sanity check: on 6×6, positional ≫ random and greedy > random.
 
 ### 4.5 DQN (`nets.py`, `replay.py`, `targets.py`)
 
-**Network** (small, ONNX-friendly, no batch norm): trunk of L conv layers (3×3, 64 channels, ReLU, same padding) → head: 1×1 conv to 2 channels → flatten → linear → N²+1 outputs → `tanh`. L = 3 for 4×4 and L = 4 for 6×6. About 120k parameters (~0.5 MB).
+**Network** (small, ONNX-friendly, no batch norm): trunk of L conv layers (3×3, 64 channels, ReLU, same padding) → head: 1×1 conv to 2 channels → flatten → linear → N²+1 outputs → `tanh`. L = 3 for 4×4, L = 4 for 6×6, and L = 5 for 8×8. About 120k parameters (~0.5 MB); about 160k on 8×8.
 
 **Loss (Double DQN, γ = 1).** The only line that differs between the two target types is the sign:
 ```
@@ -216,18 +236,19 @@ Replay tuple: `(planes_s, a, r, planes_s', legal_mask_s', done)`. At sample time
 
 **Starting hyperparameters** (shared by all four conditions):
 
-| | 4×4 | 6×6 |
-|---|---|---|
-| Training games | 30k | ~200k (set from measured throughput, ≤ 6 h/run) |
-| Parallel games | 128 | 256 |
-| Replay capacity | 50k transitions | 300k transitions |
-| Batch / optimizer | 256 / Adam 3e-4 | same |
-| Gradient steps | 1 per 16 new learner transitions (each sampled ≈ 16×) | same |
-| Target net | Hard update every 1,000 gradient steps | same |
-| Exploration | ε linear 1.0 → 0.05 over first 20% of games, then 0.05 | same |
-| Loss / clipping | Huber, grad-norm clip 10 | same |
-| Eval + checkpoint every | 1k games (30 points) | 5k games (~40 points) |
-| Seeds | 5 | 3 |
+| | 4×4 | 6×6 | 8×8 (gated, D9) |
+|---|---|---|---|
+| Training games | 30k | ~200k (set from measured throughput, ≤ 6 h/run) | ~500k placeholder (set at gate 1, ≤ 24 h/run) |
+| Parallel games | 128 | 256 | 256 |
+| Replay capacity | 50k transitions | 300k transitions | 1.5M transitions (≈ last 10% of training, as on 6×6; ~700 MB) |
+| Batch / optimizer | 256 / Adam 3e-4 | same | same |
+| Gradient steps | 1 per 16 new learner transitions (each sampled ≈ 16×) | same | same |
+| Target net | Hard update every 1,000 gradient steps | same | same |
+| Exploration | ε linear 1.0 → 0.05 over first 20% of games, then 0.05 | same | same |
+| Loss / clipping | Huber, grad-norm clip 10 | same | same |
+| Eval + checkpoint every | 1k games (30 points) | 5k games (~40 points) | 10k games (~50 points) |
+| Seeds | 5 | 3 | 1 per arm |
+| Device | CPU | CPU or GPU (§4.8 compute) | GPU only (`--device mps` or `cuda`) |
 
 ### 4.6 Training loop and opponent pool (`selfplay.py`, `pool.py`, `train.py`)
 
@@ -248,7 +269,7 @@ Replay tuple: `(planes_s, a, r, planes_s', legal_mask_s', done)`. At sample time
 ### 4.7 Evaluation protocol (`evaluate.py`, `regret.py`)
 
 **Standard metrics**
-- **Opening banks:** 4×4: all distinct positions after 2 plies. 6×6: 100 distinct positions after 4 random plies (fixed seed, saved). Each is played with both colors; agents play greedy (ε = 0).
+- **Opening banks:** 4×4: all distinct positions after 2 plies. 6×6 and 8×8: 100 distinct positions after 4 random plies (fixed seed, saved). Each is played with both colors; agents play greedy (ε = 0).
 - **Score** = (wins + 0.5·draws) / games, with a 95% Wilson interval.
 - **Per-run summary:** final score (mean of last 3 eval points) · peak · max drawdown after the peak · forgetting events (drops > 10 points below the running max) · Spearman ρ between self-play score and score vs positional.
 - **Cross-play matrix:** 15 evenly spaced checkpoints per run, round robin over the opening bank.
@@ -279,8 +300,25 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 | E3 | Cross-play matrices | — | Dec 1 (4×4) / Dec 4 (6×6) |
 | E5 | Checkpoint regret (self-history + held-out; + true regret on 4×4) | — | Dec 2 (4×4) / Dec 4 (6×6) |
 | E4 | *(Could)* A-naive replay-buffer ablation (¼ size), or pool mix 80/20 | 3 seeds | Only with spare compute |
+| P8 | *(Could)* 8×8 pilot: A-naive (`make pilot-8x8`) | 1 | Launch Nov 25, only if gate 1 passed |
+| E6 | *(Could)* 8×8 A pair: A-naive vs A-pool on the frozen code (`make sweep-8x8`) | 2 × 1 seed | Launch Dec 1 (Dec 2 at the latest), only if gate 2 passed |
 
 **Compute:** On Tue Nov 24, measure games/s and gradient steps/s on your laptop and server, then fix the 6×6 game budget so one run takes ≤ 6 h. Run as many seeds in parallel on the server as it has cores for (`tmux`), and `rsync` `runs/` back. **Fallback:** if the 12 E2 runs can't finish by Thu Dec 3, run 3 seeds for the A pair and 2 seeds for the N pair (10 runs).
+
+Measured Nov 19 on the laptop (M1 Pro): one Double-DQN gradient step at batch 256, with the §4.5 network.
+
+| | CPU (8 threads) | GPU (`mps`) | Steps per game | Gradient steps alone, per run |
+|---|---|---|---|---|
+| 6×6, L = 4 | 104 ms | 7.6 ms | ≈ 1 | 200k games: ~5.8 h CPU / ~25 min GPU |
+| 8×8, L = 5 | 198 ms | 11.2 ms | ≈ 1.9 | 500k games: ~52 h CPU / ~3 h GPU |
+
+Self-play, inference, and evaluation come on top. **On CPU only, the 6×6 plan is already at its 6 h limit from gradient steps alone.** Runs that share cores with `--torch-threads 1` are slower still. Train on a GPU wherever one is available: the laptop's (`DEVICE=mps`) is 14–18× faster than its CPU on this network.
+
+**8×8 gates (D9).** 8×8 runs only if both gates pass. If either fails, 8×8 returns to Won't and nothing else in the plan changes.
+- **Gate 1 (Tue Nov 24, throughput):** measure 8×8 alongside 6×6, then set `games` in `configs/8x8.yaml` (and rescale `replay_capacity` to ≈ 10% of learner transitions). It passes if one 8×8 run of that budget fits in ≤ 24 h on hardware E2 doesn't need. A CPU-only setup fails.
+- **Gate 2 (Mon Nov 30, pilot review):** it passes if (a) the 6×6 pilots learned (≥ 50% vs positional, the §7 bar) and (b) P8 reached ≥ 50% vs positional on 8×8.
+- **Cutoffs:** results by Sun Dec 6 earn a slide; results by Mon Dec 14 go in the report; later results are dropped. 8×8 never takes compute from E2, and it never justifies a code change after M2.
+- **Scope:** score vs random/greedy/positional, self-play score (D5), and F9. No cross-play, regret, or endgame metrics on 8×8.
 
 ### 4.9 Figures
 
@@ -295,6 +333,7 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 | **F7** | **Self-history regret by reference checkpoint index for final naive vs pool agents** (MADRID Fig. 4b analog), plus a regret grid over (empties × disc differential) (Fig. 6 analog) | slides, report |
 | F8 | 4×4: checkpoint-estimated vs true regret | report (slides if time) |
 | T1 | Summary table: §4.7 numbers, mean ± std across seeds, with the (pool − naive) gap per target type (H4) | slides, report |
+| F9 | *(Could, E6)* 8×8: score vs positional and self-play score, A-naive vs A-pool, one seed each (F2/F3 layout, same code) | report; slides if done by Dec 6 |
 
 ---
 
@@ -302,7 +341,7 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 
 ### 5.1 What visitors can do
 
-1. **Play the agent** on a 6×6 board. Pick a color and pick an opponent snapshot: *Untrained → Early → Midway → Final*.
+1. **Play the agent** on a 6×6 board, or on 8×8 if the 8×8 agent qualifies (§5.3). Pick a color and pick an opponent snapshot: *Untrained → Early → Midway → Final*.
 2. **See what it's thinking.** A toggle overlays the agent's value estimate on each legal square as win probability `(Q+1)/2`.
 3. **Watch it learn.** A slider over training checkpoints updates (a) Q heatmaps on teaching positions and (b) the learning curve, with the flat self-play line (F3) and the current checkpoint marked.
 4. *(Could)* **Watch two snapshots play** each other, or play an A agent vs an N agent.
@@ -325,7 +364,7 @@ web/ (Vite + TypeScript, no framework)
   src/ui/*        board (SVG or canvas), controls, chart
 ```
 
-- **Export:** `torch.onnx.export(model, dummy[1,3,6,6], ..., input_names=["planes"], output_names=["q"], dynamic_axes={"planes": {0: "b"}, "q": {0: "b"}})`. Masking happens in TypeScript.
+- **Export:** `torch.onnx.export(model, dummy[1,3,n,n], ..., input_names=["planes"], output_names=["q"], dynamic_axes={"planes": {0: "b"}, "q": {0: "b"}})`. Masking happens in TypeScript.
 - **Runtime:** `onnxruntime-web` with `ort.env.wasm.wasmPaths` pointed at a pinned jsDelivr version. Load each snapshot lazily, only when selected.
 - Heatmaps and curves are precomputed JSON, so the slider needs no inference.
 - The agent plays greedy, breaking exact ties randomly, with a ~400 ms delay.
@@ -347,9 +386,10 @@ web/ (Vite + TypeScript, no framework)
 
 ### 5.3 Snapshot and teaching-position selection
 
-- Use one seed from the condition with the highest final 6×6 score, and state in the About text which condition and that it's one seed.
+- **Board size (decide Dec 4):** use 8×8 if E6 has finished and its better final agent scores ≥ 70% vs positional. Otherwise use 6×6. The web engine is size-generic and `manifest.json` carries `board_size`. If the play view takes its size from there (Dec 3), this is an export choice, not a code change.
+- Use one seed from the condition with the highest final score on the chosen board, and state in the About text which condition and that it's one seed.
 - **Untrained** = game 0. **Early** = first checkpoint with ≥ 60% vs random. **Midway** = first checkpoint with ≥ 50% vs positional. **Final** = last checkpoint.
-- Teaching positions should have ≤ 12 empties so the endgame solver can confirm the correct move.
+- Teaching positions should have ≤ 12 empties so the endgame solver can confirm the correct move. Search cost depends mostly on the number of empties, so this should also work on 8×8. Check it on Dec 4 if 8×8 is chosen.
 
 ### 5.4 Correctness
 
@@ -370,18 +410,19 @@ web/ (Vite + TypeScript, no framework)
 
 ## 6. Timeline
 
-Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17.
+Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. The gated 8×8 add-on adds ≈ 4–6 h if both gates pass: measuring, launching, F9, and the demo export. Every day M1 lands early is a day of 8×8 compute; finishing off-critical-path work early does not buy any.
 
 ### Week 1 — Foundations and 4×4 (Nov 18–25)
 
 **Wed Nov 18** (~3 h)
 - [x] Ask the instructor about presentation length/format and report length/format (§11).
-- [ ] Create repo and environment (`torch numpy pytest pyyaml matplotlib scipy`), set up the §4.1 layout.
+- [x] Create repo and environment (`torch numpy pytest pyyaml matplotlib scipy`), set up the §4.1 layout.
 - [ ] Engine: bitboards, move generation, flips.
 
 **Thu Nov 19** (~3 h)
 - [ ] Engine: passes, terminal, scoring, `to_planes`, D4 transforms.
 - [ ] Engine tests (§4.2), all passing.
+- [x] 8×8 groundwork (D9): `configs/8x8.yaml`, 8×8 positional weights, 8×8 opening-bank defaults, `make pilot-8x8` / `sweep-8x8`, `DEVICE=` for the sweep targets.
 
 **Fri Nov 20** (~3–4 h)
 - [ ] Random / greedy / positional players + network-player wrapper.
@@ -392,32 +433,36 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17.
 - [ ] 4×4 full solver, π\*, eval set, and chance accuracy; check the start-position value.
 
 **Mon Nov 23** (~4–5 h)
-- [ ] DQN core: network, replay buffer, Double-DQN loss with a `target: negamax | env` switch, masking, symmetry at sample time.
+- [ ] DQN core: network, replay buffer, Double-DQN loss with a `target: negamax | env` switch, masking, symmetry at sample time. Use `cfg.device` throughout so runs can use `cuda` or `mps`.
 - [ ] A-mode environment step (opponent replies + auto-passes).
 - [ ] Target unit tests for both modes (§4.5).
 
 **Tue Nov 24** (~4–5 h)
 - [ ] Debugging ladder rungs 1–3 on 4×4 (§4.6), with JSONL logging.
 - [ ] N must show Q correlating with solver values. Both must show accuracy clearly above chance and ≥ 90% vs random. Run E0 if stuck.
-- [ ] Measure throughput on laptop and server; fix the 6×6 budget and whether 12 runs fit (§4.8 fallback).
+- [ ] Measure throughput on laptop (CPU and `mps`) and server, for 6×6 and 8×8; fix the 6×6 budget and whether 12 runs fit (§4.8 fallback).
+- [ ] **8×8 gate 1** (§4.8): set the 8×8 game budget, or drop 8×8.
 
 **Wed Nov 25** (~4 h) — **M1**
 - [ ] Opponent pool, checkpointing, YAML configs, run directories with commit hash.
 - [ ] Launch **E1** (4×4 2×2, 20 runs).
 - [ ] Launch **6×6 pilots** (4 runs) on the server before leaving for the holiday.
+- [ ] If gate 1 passed: launch the **8×8 pilot** P8 on hardware the 6×6 pilots don't use (`make pilot-8x8 DEVICE=mps`).
 
 **Thu Nov 26 – Sat Nov 28** — Thanksgiving (optional ~2 h Sat)
 - [ ] *(optional)* Start the 6×6 endgame solver or the TS engine port. Both are off the training critical path.
-- [ ] Glance at pilot logs; don't change training code.
+- [ ] Glance at pilot logs (6×6 and P8); don't change training code.
 
 ### Week 2 — 6×6 experiments and demo (Nov 30 – Dec 5)
 
 **Mon Nov 30** (~4 h)
 - [ ] Review E1 and the pilots. If 6×6 isn't learning, change at most 2 shared knobs (lr, budget, ε schedule), the same for all four conditions.
+- [ ] **8×8 gate 2** (§4.8): go/no-go on E6.
 - [ ] 6×6 endgame solver + 500-position test set, cached.
 
 **Tue Dec 1** (~4 h) — **M2: experiment code freeze**
 - [ ] Launch **E2** (6×6 2×2, 12 runs, endgame accuracy in eval).
+- [ ] If gate 2 passed: launch **E6** (8×8 A pair) on hardware E2 doesn't use (`make sweep-8x8 DEVICE=mps`), on Dec 2 at the latest.
 - [ ] Analysis scripts: seed-band curves, §4.7 summary numbers, Spearman ρ, H4 gap.
 - [ ] Cross-play script; run E3 on 4×4.
 
@@ -428,12 +473,13 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17.
 **Thu Dec 3** (~4–5 h)
 - [ ] Web: scaffold Vite + TS, port the engine, engine parity test passing.
 - [ ] `export.py`: ONNX + Q fixtures; model parity passing (use pilot checkpoints for now).
-- [ ] Play view: board, color choice, snapshot picker, pass/game-over handling, Q overlay.
+- [ ] Play view: board, color choice, snapshot picker, pass/game-over handling, Q overlay. Take the board size from `manifest.json` so 8×8 needs no UI changes.
 - [ ] **Cut rule:** if play isn't working by tonight, "Watch it learn" moves to Dec 11–16 and the talk uses a static F3.
 
 **Fri Dec 4** (~4–5 h)
 - [ ] E2 done: 6×6 F2, F4, F5, T1; run E5 on 6×6 → F7.
-- [ ] Pick snapshots and teaching positions (§5.3); export final ONNX + `manifest/curves/heatmaps.json`.
+- [ ] If E6 finished: F9 (the F2/F3 code pointed at `e6-8x8`).
+- [ ] Pick the demo board size (6×6 or 8×8), snapshots, and teaching positions (§5.3); export final ONNX + `manifest/curves/heatmaps.json`.
 
 **Sat Dec 5** (~3–4 h) — **M3**
 - [ ] Deploy the play view to GitHub Pages under your domain; link it from the portfolio.
@@ -443,7 +489,7 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17.
 ### Week 3 — Presentation (Dec 7–10)
 
 **Mon Dec 7** (~4 h)
-- [ ] Draft the deck from §8 with all figures in.
+- [ ] Draft the deck from §8 with all figures in. The 8×8 slide goes in only if F9 exists today. Otherwise 8×8 is report-only.
 
 **Tue Dec 8** (~3 h)
 - [ ] Finish the deck; full timed rehearsal; cut to time.
@@ -459,11 +505,11 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17.
 - [ ] **Fri Dec 11:** Outline; Method and Setup sections (adapt §3–4 of this spec).
 - [ ] **Sat Dec 12:** Results with figures and captions. Finish "Watch it learn" if it slipped.
 - [ ] **Mon Dec 14:** Intro, related work (MADRID, TiZero, AlphaGo/AlphaZero opponent handling), discussion, limitations.
-- [ ] **Tue Dec 15:** Full draft; appendix (hyperparameters, engine/solver validation, demo link).
+- [ ] **Tue Dec 15:** Full draft; appendix (hyperparameters, engine/solver validation, demo link, F9 if E6 ran).
 - [ ] **Wed Dec 16:** Revise using presentation Q&A; proofread; repo README; link the report from the demo's About page.
 - [ ] **Thu Dec 17:** Submit.
 
-No new experiments in report week. Extra seeds may run in the background if they finish by Dec 14.
+No new experiments in report week. Extra seeds may run in the background if they finish by Dec 14. The same cutoff applies to E6.
 
 ---
 
@@ -473,11 +519,12 @@ No new experiments in report week. Extra seeds may run in the background if they
 |---|---|---|
 | Sign/pass bug in N targets | 4×4 Q doesn't correlate with solver values | Target unit tests; debugging ladder; E0. If N still isn't right by Nov 25, launch the A runs anyway and finish N on Nov 30 (it's the contrast arm) |
 | DQN instability | Loss spikes, Q saturates at ±1 | Lower lr, more frequent target updates, confirm grad clipping; never per condition |
-| 6×6 too slow / 12 runs don't fit | Measured budget > 6 h/run or too few server cores | Shrink the net to 32 channels, cut the game budget, use the §4.8 seed fallback |
+| 6×6 too slow / 12 runs don't fit | Measured budget > 6 h/run or too few server cores (on CPU, gradient steps alone are ~5.8 h; §4.8) | Train on a GPU (`DEVICE=cuda`, or `mps` on the laptop), shrink the net to 32 channels, cut the game budget, use the §4.8 seed fallback |
+| 8×8 too slow or not learning | Gate 1: > 24 h/run on spare hardware. Gate 2: P8 < 50% vs positional | Drop 8×8 to future work. Never delay E2, change code after M2, or borrow from Dec 7–9 for it |
 | 6×6 not learning by Dec 1 | Pilot score vs positional < 50% | 4×4 becomes the main result; present 6×6 as preliminary |
 | Pool ≈ naive everywhere | Overlapping seed bands in both rows | That's a result: lean on F3, F7, and the D1 framing (the replay buffer is already an implicit pool) |
 | Demo eats presentation time | Not playable by Dec 3 | Play view only for the talk; the rest moves to Dec 11–16 |
-| Server unavailable | — | Run on the laptop overnight with a reduced 6×6 budget and the seed fallback |
+| Server unavailable | — | Run on the laptop GPU (`mps`) overnight with a reduced 6×6 budget and the seed fallback. 8×8 is dropped, because E2 needs the laptop |
 
 **Slip rule:** if any milestone slips by more than one day, apply the matching cut immediately rather than borrowing from the Dec 7–9 presentation days.
 
@@ -490,7 +537,7 @@ No new experiments in report week. Extra seeds may run in the background if they
 3. **Two views of self-play (D1):** opponent-as-environment (learn a best response; passes are just dynamics) vs negamax (learn the minimax value; passes need explicit sign flips). Use a small diagram. Prediction: the pool should matter more for the first view.
 4. **Setup:** the 2×2, boards, reference opponents, solvers as ground truth.
 5. **4×4 results:** F1 (accuracy against exact play) + T1.
-6. **6×6 results:** F2, H4 gap.
+6. **6×6 results:** F2, H4 gap. *(If F9 exists by Dec 6)* one 8×8 slide: does the A-row result hold on the full board? One seed per arm.
 7. **What self-play hides:** F3 + F7. Earlier checkpoints beat the final agent from specific positions, and self-play score never shows it (MADRID's cross-play-minus-self-play idea).
 8. **Takeaways + demo:** "Watch it learn" (F6 or live demo).
 
@@ -498,7 +545,7 @@ No new experiments in report week. Extra seeds may run in the background if they
 
 4–6 pages, single-column conference template (NeurIPS or ICLR style). Figures count toward the limit; references and the appendix don't. The limit is soft, but no padding: every paragraph has a purpose and figures stay modest (full width, ≤ 1.7 in tall). Working budget: ~2,600 words + ~1.3 pages of figures/tables ≈ 5.5 pages.
 
-Abstract · 1 Introduction and question · 2 Background and related work (self-play, DQN, opponent pools, MADRID checkpoint regret) · 3 Formulation (MDP, both views, targets, passes) · 4 Method (network, Double DQN, symmetries, pool) · 5 Experimental setup (2×2, boards, seeds, budgets, opponents, solvers, metrics, regret) · 6 Results · 7 Discussion (what self-play metrics hide; when pools matter) · 8 Limitations and future work (8×8, prioritized pool sampling, search, MAP-Elites over positions) · 9 Conclusion · Appendix (hyperparameters, validation, demo link)
+Abstract · 1 Introduction and question · 2 Background and related work (self-play, DQN, opponent pools, MADRID checkpoint regret) · 3 Formulation (MDP, both views, targets, passes) · 4 Method (network, Double DQN, symmetries, pool) · 5 Experimental setup (2×2, boards, seeds, budgets, opponents, solvers, metrics, regret) · 6 Results · 7 Discussion (what self-play metrics hide; when pools matter) · 8 Limitations and future work (a full 8×8 study with the N row and more seeds, prioritized pool sampling, search, MAP-Elites over positions) · 9 Conclusion · Appendix (hyperparameters, validation, demo link, 8×8 A pair if E6 ran)
 
 ## 10. References
 
@@ -508,5 +555,5 @@ Abstract · 1 Introduction and question · 2 Background and related work (self-p
 ## 11. Open items
 
 - [x] Presentation: ~15 minutes. Report: 4–6 pages in a single-column conference template (IEEE, NeurIPS, ICLR, or equivalent). Figures count toward the pages, references and the appendix don't; the limit is soft but no filler or oversized figures (Nov 19).
-- [ ] Server specs: CPU cores, GPU? These decide whether all 12 E2 runs fit (Nov 24).
+- [ ] Server specs: CPU cores, GPU? These decide whether all 12 E2 runs fit and whether 8×8 can run beside them (Nov 24). A GPU matters for 6×6 too: on CPU, the 6×6 plan is already at its 6 h/run limit (§4.8, measured Nov 19).
 - [x] Demo URL: `othello.johnnygoodlad.dev` (portfolio is a project site with a custom domain; §5.5).

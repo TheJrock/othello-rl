@@ -1,0 +1,36 @@
+# 8×8 defaults (spec §4.5). A gated add-on, not part of the 2×2 (spec D9, §4.8): the env pair only,
+# one seed each. Run it on a GPU, e.g.
+#   python -m othello_rl.train --config configs/8x8.yaml --exp e6-8x8 --target env --sampling pool --seed 0 --device mps
+board: 8
+
+# network
+channels: 64
+layers: 5
+
+# self-play and replay
+games: 500000            # placeholder: set from measured throughput on Nov 24 so one run takes <= 24 h (gate 1, spec §4.8)
+parallel_games: 256
+replay_capacity: 1500000 # ~ last 10% of training's learner transitions, as on 6×6 (spec D1); rescale if `games` changes
+augment: true
+
+# optimisation
+batch_size: 256
+lr: 0.0003
+transitions_per_grad_step: 16
+target_update_every: 1000
+grad_clip: 10.0
+
+# exploration (both players)
+eps_start: 1.0
+eps_end: 0.05
+eps_decay_frac: 0.2
+
+# opponent pool (sampling: pool only)
+pool_groups: 8
+pool_p_latest: 0.5
+
+# evaluation and checkpoints
+eval_every: 10000
+openings: data/openings_8x8.json
+solver_table: null
+endgame_set: null

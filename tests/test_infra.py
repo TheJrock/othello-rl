@@ -13,7 +13,7 @@ from othello_rl.config import Config, load_config, parse_cli
 CONFIGS = Path(__file__).resolve().parents[1] / "configs"
 
 
-@pytest.mark.parametrize("name,board", [("4x4.yaml", 4), ("6x6.yaml", 6)])
+@pytest.mark.parametrize("name,board", [("4x4.yaml", 4), ("6x6.yaml", 6), ("8x8.yaml", 8)])
 def test_shipped_configs_load(name, board):
     cfg = load_config(CONFIGS / name)
     assert cfg.board == board

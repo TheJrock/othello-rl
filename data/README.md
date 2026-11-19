@@ -6,6 +6,7 @@ Fixed evaluation benchmarks. Build them once with `make data` (seeded), commit t
 |---|---|---|
 | `openings_4x4.json` | `build_data.py openings --board 4` | Every distinct position after 2 plies |
 | `openings_6x6.json` | `build_data.py openings --board 6` | 100 distinct positions after 4 random plies (seed 0) |
+| `openings_8x8.json` | `build_data.py openings --board 8` | Same as 6×6, for the gated 8×8 add-on (spec §4.8) |
 | `endgame6.jsonl` | `build_data.py endgame6` | 500 solved 6×6 positions with 10–12 empties (spec §4.4) |
 | `regret_positions_6x6.json` | `build_data.py regret-positions` | 2,000 positions for the checkpoint-regret analysis (spec §4.7) |
 | `teaching_positions.json` | by hand | 2–3 demo positions with ≤ 12 empties (spec §5.3) |

@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--config", type=Path, required=True)
-    p.add_argument("--exp", required=True, help="experiment name, e.g. e1-4x4, pilot-6x6, e2-6x6")
+    p.add_argument("--exp", required=True, help="experiment name, e.g. e1-4x4, pilot-6x6, e2-6x6, e6-8x8")
     p.add_argument("--targets", nargs="+", choices=TARGETS, default=list(TARGETS))
     p.add_argument("--samplings", nargs="+", choices=SAMPLINGS, default=list(SAMPLINGS))
     p.add_argument("--seeds", nargs="+", type=int, default=[0])

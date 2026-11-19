@@ -11,7 +11,7 @@ The experiment is a 2×2 design on 4×4 and 6×6 boards:
 | **`env`** targets (opponent-as-environment) | env-naive | env-pool |
 | **`negamax`** targets | negamax-naive | negamax-pool |
 
-Agents are scored against random/greedy/positional players and exact solvers, and with a MADRID-style checkpoint-regret analysis. A web demo lets visitors play training snapshots. The full plan and timeline are in [docs/spec.md](docs/spec.md).
+Agents are scored against random/greedy/positional players and exact solvers, and with a MADRID-style checkpoint-regret analysis. If compute allows, an optional add-on repeats the `env` pair (naive vs pool, one seed each) on the full 8×8 board, after two go/no-go checkpoints (spec D9, §4.8). A web demo lets visitors play training snapshots. The full plan and timeline are in [docs/spec.md](docs/spec.md).
 
 ## Status
 
@@ -22,9 +22,12 @@ Agents are scored against random/greedy/positional players and exact solvers, an
 | Project scaffold: package layout, configs, run directories, test suite, CI | Nov 18 | Done |
 | Demo hosting at [othello.johnnygoodlad.dev](https://othello.johnnygoodlad.dev), deployed from this repo | Dec 5 | Done (placeholder page until M3) |
 | Report skeleton in `report/` (NeurIPS style) | — | Done |
+| 8×8 groundwork: `configs/8x8.yaml`, positional weights, `make pilot-8x8` / `sweep-8x8` | Nov 19 | Done |
 | Othello engine (bitboards, move generation, passes) and its tests | Nov 19 | Up next |
-| **M1:** 4×4 DQN learning under both target types, checked against an exact solver; 4×4 sweep launched | Nov 25 | Planned |
-| **M2:** experiment code frozen; final 6×6 runs launched | Dec 1 | Planned |
+| 8×8 gate 1: an 8×8 run fits in ≤ 24 h on hardware the 6×6 runs don't need | Nov 24 | Planned |
+| **M1:** 4×4 DQN learning under both target types, checked against an exact solver; 4×4 sweep and 6×6 pilots launched (plus the 8×8 pilot if gate 1 passed) | Nov 25 | Planned |
+| 8×8 gate 2: 6×6 pilots learned and the 8×8 pilot reached ≥ 50% vs positional | Nov 30 | Planned |
+| **M2:** experiment code frozen; final 6×6 runs launched (plus the 8×8 pair if gate 2 passed) | Dec 1 | Planned |
 | **M3:** all figures final; playable demo live | Dec 5 | Planned |
 | Final presentation | Dec 10 | Planned |
 | Final report | Dec 17 | Planned |
@@ -47,11 +50,14 @@ Without `uv` (e.g. on the training server): `python3 -m venv .venv && .venv/bin/
 | `make data` | Build the fixed benchmarks in `data/` (see [data/README.md](data/README.md)) |
 | `make sweep-4x4 JOBS=8` | E1: all four conditions × 5 seeds on 4×4 |
 | `make pilot-6x6`, `make sweep-6x6` | P and E2 on 6×6 |
+| `make pilot-8x8`, `make sweep-8x8` | P8 and E6 on 8×8 (gated add-on). Needs a GPU: `DEVICE=mps` or `DEVICE=cuda` |
 | `make sync SERVER=user@host` | rsync `runs/` back from the training server |
 | `make figures` | `runs/` → `figures/`, `tables/` |
 | `make report` | Build `report/main.pdf` (NeurIPS style; needs `brew install tectonic` or MacTeX) |
 | `make demo RUN=runs/e2-6x6/env-pool/seed0` | Export a run for the web demo |
 | `make web-dev` | Serve the demo locally |
+
+Every sweep target takes `DEVICE=cpu|cuda|mps` (default `cpu`).
 
 A single run:
 
@@ -66,7 +72,7 @@ Every config field is also a flag (`--games 2000`, `--lr 1e-4`, ...). Output goe
 ```
 src/othello_rl/   engine · players · solver · nets · replay · targets · selfplay · pool · train
                   evaluate · regret · export · config · rundir
-configs/          4x4.yaml, 6x6.yaml (target/sampling/seed come from the CLI)
+configs/          4x4.yaml, 6x6.yaml, 8x8.yaml (target/sampling/seed come from the CLI)
 data/             fixed benchmark positions (committed)
 scripts/          build_data · sweep · analyze · export_demo
 tests/            pytest suite

@@ -3,11 +3,13 @@
 
 PY ?= .venv/bin/python
 JOBS ?= 4
+# training device for the sweep targets: cpu | cuda | mps (8×8 needs a GPU, spec §4.8)
+DEVICE ?= cpu
 SERVER ?=
 SERVER_DIR ?= othello-rl
 RUN ?=
 
-.PHONY: help setup test test-py test-web data sweep-4x4 pilot-6x6 sweep-6x6 sync figures report demo web-dev
+.PHONY: help setup test test-py test-web data sweep-4x4 pilot-6x6 sweep-6x6 pilot-8x8 sweep-8x8 sync figures report demo web-dev
 
 help:  ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-11s %s\n", $$1, $$2}'
@@ -29,17 +31,24 @@ data:  ## build the fixed benchmarks in data/ (refuses to overwrite existing fil
 	$(PY) scripts/build_data.py solve4x4
 	$(PY) scripts/build_data.py openings --board 4
 	$(PY) scripts/build_data.py openings --board 6
+	$(PY) scripts/build_data.py openings --board 8
 	$(PY) scripts/build_data.py endgame6
 	$(PY) scripts/build_data.py regret-positions
 
 sweep-4x4:  ## E1: 4x4, 2x2 conditions x 5 seeds   (JOBS=8 to run 8 at once)
-	$(PY) scripts/sweep.py --config configs/4x4.yaml --exp e1-4x4 --seeds 0 1 2 3 4 --jobs $(JOBS)
+	$(PY) scripts/sweep.py --config configs/4x4.yaml --exp e1-4x4 --seeds 0 1 2 3 4 --jobs $(JOBS) -- --device $(DEVICE)
 
 pilot-6x6:  ## P: 6x6, 2x2 conditions x 1 seed
-	$(PY) scripts/sweep.py --config configs/6x6.yaml --exp pilot-6x6 --seeds 0 --jobs $(JOBS)
+	$(PY) scripts/sweep.py --config configs/6x6.yaml --exp pilot-6x6 --seeds 0 --jobs $(JOBS) -- --device $(DEVICE)
 
 sweep-6x6:  ## E2: 6x6, 2x2 conditions x 3 seeds
-	$(PY) scripts/sweep.py --config configs/6x6.yaml --exp e2-6x6 --seeds 0 1 2 --jobs $(JOBS)
+	$(PY) scripts/sweep.py --config configs/6x6.yaml --exp e2-6x6 --seeds 0 1 2 --jobs $(JOBS) -- --device $(DEVICE)
+
+pilot-8x8:  ## P8: 8x8 env-naive, 1 seed; gate 1 must pass first (spec §4.8). Needs DEVICE=mps or cuda
+	$(PY) scripts/sweep.py --config configs/8x8.yaml --exp pilot-8x8 --targets env --samplings naive --seeds 0 --jobs 1 -- --device $(DEVICE)
+
+sweep-8x8:  ## E6: 8x8 env-naive + env-pool, 1 seed; gate 2 must pass first. Needs DEVICE=mps or cuda
+	$(PY) scripts/sweep.py --config configs/8x8.yaml --exp e6-8x8 --targets env --seeds 0 --jobs $(JOBS) -- --device $(DEVICE)
 
 sync:  ## copy runs/ back from the server: make sync SERVER=user@host
 	@test -n "$(SERVER)" || (echo "usage: make sync SERVER=user@host [SERVER_DIR=othello-rl]"; exit 1)
