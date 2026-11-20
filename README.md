@@ -23,7 +23,7 @@ Agents are scored against random/greedy/positional players and exact solvers, an
 | Demo hosting at [othello.johnnygoodlad.dev](https://othello.johnnygoodlad.dev), deployed from this repo | Dec 5 | Done (placeholder page until M3) |
 | Report skeleton in `report/` (NeurIPS style) | — | Done |
 | 8×8 groundwork: `configs/8x8.yaml`, positional weights, `make pilot-8x8` / `sweep-8x8` | Nov 19 | Done |
-| Othello engine (bitboards, move generation, passes) and its tests | Nov 19 | Up next |
+| Othello engine (bitboards, move generation, passes) and its tests | Nov 19 | Done |
 | 8×8 gate 1: an 8×8 run fits in ≤ 24 h on hardware the 6×6 runs don't need | Nov 24 | Planned |
 | **M1:** 4×4 DQN learning under both target types, checked against an exact solver; 4×4 sweep and 6×6 pilots launched (plus the 8×8 pilot if gate 1 passed) | Nov 25 | Planned |
 | 8×8 gate 2: 6×6 pilots learned and the 8×8 pilot reached ≥ 50% vs positional | Nov 30 | Planned |

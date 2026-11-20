@@ -52,7 +52,10 @@ def test_string_round_trip():
     assert E.to_string(s) == board
 
 
-# Published 8×8 Othello perft counts. Confirm against a published table (spec §4.2) before relying on deeper values.
+# 8×8 Othello perft counts, matching Egaroucid's published table (a forced pass counts as a ply, a finished
+# game is a leaf): https://www.egaroucid.nyanyan.dev/en/technology/explanation/ (checked Nov 19, 2026).
+# The engine also matches depths 7-9 there (55,092 / 390,216 / 3,005,288); depth 9 is the first where passes
+# and game ends occur, but it takes ~45 s, so it isn't run here.
 PERFT_8X8 = {1: 4, 2: 12, 3: 56, 4: 244, 5: 1396, 6: 8200}
 
 

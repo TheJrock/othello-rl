@@ -417,11 +417,11 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 **Wed Nov 18** (~3 h)
 - [x] Ask the instructor about presentation length/format and report length/format (§11).
 - [x] Create repo and environment (`torch numpy pytest pyyaml matplotlib scipy`), set up the §4.1 layout.
-- [ ] Engine: bitboards, move generation, flips.
+- [x] Engine: bitboards, move generation, flips. *(done Nov 19)*
 
 **Thu Nov 19** (~3 h)
-- [ ] Engine: passes, terminal, scoring, `to_planes`, D4 transforms.
-- [ ] Engine tests (§4.2), all passing.
+- [x] Engine: passes, terminal, scoring, `to_planes`, D4 transforms.
+- [x] Engine tests (§4.2), all passing. 8×8 perft matches Egaroucid's published table through depth 9.
 - [x] 8×8 groundwork (D9): `configs/8x8.yaml`, 8×8 positional weights, 8×8 opening-bank defaults, `make pilot-8x8` / `sweep-8x8`, `DEVICE=` for the sweep targets.
 
 **Fri Nov 20** (~3–4 h)

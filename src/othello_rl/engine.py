@@ -16,6 +16,7 @@ Keep this module free of torch: the solvers and evaluation run it in tight loops
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -99,7 +100,7 @@ def initial(n: int) -> State:
 def from_string(text: str, black_to_move: bool = True) -> State:
     """Parse a board string (see module docstring). n is inferred from the number of squares."""
     cells = "".join(text.split())
-    n = int(round(len(cells) ** 0.5))
+    n = math.isqrt(len(cells))
     if n * n != len(cells) or n not in SIZES:
         raise ValueError(f"expected 16, 36 or 64 squares, got {len(cells)}")
     me = opp = 0
@@ -172,10 +173,7 @@ def legal_mask(s: State) -> np.ndarray:
     mask = np.zeros(n * n + 1, dtype=bool)
     moves = legal_moves(s)
     if moves:
-        while moves:
-            low = moves & -moves  # lowest set bit
-            mask[low.bit_length() - 1] = True
-            moves ^= low
+        mask[: n * n] = _unpack(moves, n)
     elif legal_moves(_swap(s)):
         mask[n * n] = True  # forced pass
     return mask
@@ -220,34 +218,87 @@ def step(s: State, a: int) -> tuple[State, float, bool]:
     return s2, (float(-outcome(s2)) if done else 0.0), done
 
 
+def _unpack(x: int, n: int) -> np.ndarray:
+    """Bitboard → uint8 array of length n*n with entry i = bit i (n*n <= 64 for every board size)."""
+    raw = np.frombuffer(x.to_bytes(8, "little"), dtype=np.uint8)
+    return np.unpackbits(raw, bitorder="little")[: n * n]
+
+
 def to_planes(s: State) -> np.ndarray:
     """float32 array (3, n, n): [side-to-move discs, other side's discs, legal squares]."""
-    raise NotImplementedError("engine.to_planes")
+    n = s.n
+    planes = np.empty((3, n * n), dtype=np.float32)
+    planes[0] = _unpack(s.me, n)
+    planes[1] = _unpack(s.opp, n)
+    planes[2] = _unpack(legal_moves(s), n)  # all zero in a forced-pass state
+    return planes.reshape(3, n, n)
+
+
+# --- D4 symmetries ------------------------------------------------------------------------------
+# transform_planes is the single definition of the 8 symmetries. Everything else (actions, masks,
+# bitboards) goes through index tables computed by applying transform_planes to a grid of square
+# indices, so the board, the action and the mask can never disagree about where a square went.
 
 
 def transform_planes(x: np.ndarray, k: int) -> np.ndarray:
     """Apply D4 symmetry k to the last two axes of x (any leading shape)."""
-    raise NotImplementedError("engine.transform_planes")
+    if not 0 <= k < 8:
+        raise ValueError(f"symmetry k must be in 0..7, got {k}")
+    if k >= 4:
+        x = np.flip(x, axis=-1)  # np.fliplr on the last two axes
+        k -= 4
+    # Contiguous copy: torch.from_numpy rejects the negative strides rot90/flip views can have.
+    return np.ascontiguousarray(np.rot90(x, k, axes=(-2, -1)))
+
+
+def _symmetry_tables(n: int) -> tuple[np.ndarray, np.ndarray]:
+    """For each k, over the n*n + 1 actions (pass last, mapped to itself):
+    dest[k][a]   where action a lands under symmetry k
+    source[k][j] which action lands on j (the inverse permutation)"""
+    grid = np.arange(n * n).reshape(n, n)
+    dest = np.empty((8, n * n + 1), dtype=np.int64)
+    source = np.empty((8, n * n + 1), dtype=np.int64)
+    for k in range(8):
+        src = transform_planes(grid, k).ravel()  # new square j holds old square src[j]
+        source[k, : n * n] = src
+        dest[k, src] = np.arange(n * n)
+        source[k, n * n] = dest[k, n * n] = n * n  # pass
+    return dest, source
+
+
+_SYM = {n: _symmetry_tables(n) for n in SIZES}
 
 
 def transform_action(a: int, n: int, k: int) -> int:
     """Where square `a` lands under symmetry k. Pass maps to pass."""
-    raise NotImplementedError("engine.transform_action")
+    return int(_SYM[n][0][k, a])
 
 
 def transform_mask(mask: np.ndarray, n: int, k: int) -> np.ndarray:
     """Apply symmetry k to a (…, n*n + 1) legal mask; the pass entry is unchanged."""
-    raise NotImplementedError("engine.transform_mask")
+    return mask[..., _SYM[n][1][k]]
 
 
 def transform_state(s: State, k: int) -> State:
     """The same position under symmetry k (the rules are D4-invariant)."""
-    raise NotImplementedError("engine.transform_state")
+    dest = _SYM[s.n][0][k]
+
+    def move_bits(x: int) -> int:
+        out = 0
+        while x:
+            low = x & -x
+            out |= 1 << int(dest[low.bit_length() - 1])
+            x ^= low
+        return out
+
+    return State(move_bits(s.me), move_bits(s.opp), s.n, s.black_to_move)
 
 
 def inverse_symmetry(k: int) -> int:
     """The k' that undoes symmetry k. Rotations invert to (4 - k) % 4; reflections (k >= 4) are their own inverse."""
-    raise NotImplementedError("engine.inverse_symmetry")
+    if not 0 <= k < 8:
+        raise ValueError(f"symmetry k must be in 0..7, got {k}")
+    return (4 - k) % 4 if k < 4 else k
 
 
 def perft(s: State, depth: int) -> int:
