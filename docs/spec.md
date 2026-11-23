@@ -215,7 +215,9 @@ Both checks pass on 6×6 and 8×8. On 4×4, greedy is no better than random: gra
 ### 4.4 Solvers (`solver.py`)
 
 - **4×4 full solve:** memoized negamax over win/loss/draw values for every reachable position, giving the value of every (position, move) pair and an optimal policy π\*. The start position should match the published result (4×4 and 6×6 are both reported as second-player wins; confirm the source).
+  - *Confirmed Nov 23.* The solve covers all 58,533 reachable positions (0.45 s). It has no alpha-beta cutoffs, so every position the regret analysis might look up is in the table. V(start) = −1 for Black: White wins. A separate disc-margin solve gives exactly **3–11** under perfect play, with 2 squares left empty. This matches the published 4×4 result (White wins 3–11; Wikipedia, *Computer Othello*), and `tests/test_solver.py` now checks it.
 - **4×4 eval set:** all reachable non-terminal positions with ≥2 legal moves whose moves don't all have the same value. Also compute **chance accuracy** (expected accuracy of a uniform-random mover) for a baseline line on plots.
+  - *Measured Nov 23:* 7,912 positions; chance accuracy **49.4%**. A random player's measured accuracy matches it.
 - **6×6 endgame solver:** alpha-beta WLD search with a null window, move ordering (corners first, then fewest opponent replies), and a transposition table.
 - **6×6 endgame test set:** 500 positions with 10–12 empties, sampled from games between randomized reference players, filtered as above. Solve once with `multiprocessing` and cache to `data/endgame6.jsonl`.
 
@@ -442,7 +444,7 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 - [x] Eval harness: opening banks, both colors, score + Wilson CI. Sanity-check opponent strengths. *(done Nov 23; banks revised, §4.7; results in §4.3)*
 
 **Sat Nov 21** (~3 h)
-- [ ] 4×4 full solver, π\*, eval set, and chance accuracy; check the start-position value.
+- [x] 4×4 full solver, π\*, eval set, and chance accuracy; check the start-position value. *(done Nov 23; White wins 3–11, matches published, §4.4)*
 
 **Mon Nov 23** (~4–5 h)
 - [ ] DQN core: network, replay buffer, Double-DQN loss with a `target: negamax | env` switch, masking, symmetry at sample time. Use `cfg.device` throughout so runs can use `cuda` or `mps`.
