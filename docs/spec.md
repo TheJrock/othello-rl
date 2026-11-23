@@ -425,7 +425,7 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 - [x] 8×8 groundwork (D9): `configs/8x8.yaml`, 8×8 positional weights, 8×8 opening-bank defaults, `make pilot-8x8` / `sweep-8x8`, `DEVICE=` for the sweep targets.
 
 **Fri Nov 20** (~3–4 h)
-- [ ] Random / greedy / positional players + network-player wrapper.
+- [x] Random / greedy / positional players + network-player wrapper. *(done Nov 23)*
 - [ ] Batched game runner (any two players, many games at once).
 - [ ] Eval harness: opening banks, both colors, score + Wilson CI. Sanity-check opponent strengths.
 
