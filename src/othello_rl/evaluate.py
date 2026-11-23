@@ -7,6 +7,7 @@ played once in each colour (spec D4).
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,15 +18,29 @@ import torch
 
 from . import solver
 from .config import Config
-from .engine import State, from_string, to_string
+from .engine import State, from_string, initial, is_terminal, legal_mask, step, to_string
 from .players import GreedyPlayer, NetPlayer, Player, PositionalPlayer, RandomPlayer
+from .selfplay import play_games
 
 # --- statistics ---------------------------------------------------------------------------------
 
 
 def wilson_interval(score: float, n: int, z: float = 1.96) -> tuple[float, float]:
-    """Wilson score interval for a proportion. Draws count as half a win in `score`."""
-    raise NotImplementedError("evaluate.wilson_interval")
+    """Wilson score interval for a proportion. Draws count as half a win in `score`.
+
+    Treating a draw as half a Bernoulli success slightly overstates the variance (a draw is less
+    spread out than a coin flip between win and loss), so with draws the interval is a little
+    conservative. Unlike the normal approximation, it stays inside [0, 1] and is sensible at 0% or 100%.
+    """
+    if n <= 0:
+        raise ValueError(f"need at least one game, got n={n}")
+    if not 0.0 <= score <= 1.0:
+        raise ValueError(f"score must be in [0, 1], got {score}")
+    z2 = z * z
+    denom = 1 + z2 / n
+    center = (score + z2 / (2 * n)) / denom
+    half = z * math.sqrt(score * (1 - score) / n + z2 / (4 * n * n)) / denom
+    return max(0.0, center - half), min(1.0, center + half)
 
 
 @dataclass
@@ -69,10 +84,40 @@ def load_endgame_set(path: str | Path) -> list[dict[str, Any]]:
 def opening_bank(n: int, plies: int, count: int | None, seed: int) -> list[State]:
     """Distinct positions after `plies` uniformly random plies from engine.initial(n).
 
-    count=None: every distinct position reachable in exactly `plies` plies (4×4 uses plies=2).
-    Otherwise sample with a seeded rng until `count` distinct positions are found (6×6: plies=4,
-    count=100). "Distinct" means the same discs and side to move; positions are not merged under symmetry."""
-    raise NotImplementedError("evaluate.opening_bank")
+    count=None: every distinct position reachable in exactly `plies` plies (4×4 uses plies=4).
+    Otherwise sample with a seeded rng until `count` distinct positions are found (6×6 and 8×8: plies=6,
+    count=100). "Distinct" means the same discs and side to move; positions are not merged under symmetry.
+
+    Terminal positions are never included (there would be nothing to play). Forced passes count as
+    plies, as in engine.perft. Raises ValueError if `count` distinct positions can't be found."""
+    if count is None:
+        level = {initial(n)}
+        for _ in range(plies):  # a terminal position has no legal action, so it drops out here
+            level = {step(s, int(a))[0] for s in level for a in np.flatnonzero(legal_mask(s))}
+        bank = [s for s in level if not is_terminal(s)]
+        return sorted(bank, key=lambda s: (s.me, s.opp, s.black_to_move))  # stable order for the file
+
+    rng = np.random.default_rng(seed)
+    bank: list[State] = []
+    seen: set[State] = set()
+    max_tries = 100 * count  # generous: even 100 of the 236 6×6 positions at 4 plies takes only ~200
+    for _ in range(max_tries):
+        s = initial(n)
+        for _ in range(plies):
+            legal = np.flatnonzero(legal_mask(s))
+            if legal.size == 0:  # the game ended before `plies` plies
+                break
+            s = step(s, int(rng.choice(legal)))[0]
+        else:
+            if not is_terminal(s) and s not in seen:
+                seen.add(s)
+                bank.append(s)
+                if len(bank) == count:
+                    return bank
+    raise ValueError(
+        f"found only {len(bank)} distinct {n}×{n} positions after {plies} plies in {max_tries} tries "
+        f"(wanted {count}); use more plies or count=None to enumerate them all"
+    )
 
 
 # --- matches and metrics ------------------------------------------------------------------------
@@ -85,7 +130,20 @@ def reference_players(n: int) -> dict[str, Player]:
 def play_match(p1: Player, p2: Player, openings: Sequence[State], rng: np.random.Generator) -> MatchStats:
     """Each opening twice: once with p1 as the side to move, once as the other side. All games are
     batched through selfplay.play_games."""
-    raise NotImplementedError("evaluate.play_match")
+    if not openings:
+        raise ValueError("play_match needs at least one opening")
+    black: list[Player] = []
+    white: list[Player] = []
+    p1_is_black: list[bool] = []
+    for s in openings:
+        for p1_moves_first in (True, False):
+            p1_black = s.black_to_move == p1_moves_first  # p1 takes the colour whose turn it is, or not
+            black.append(p1 if p1_black else p2)
+            white.append(p2 if p1_black else p1)
+            p1_is_black.append(p1_black)
+    starts = [s for s in openings for _ in range(2)]
+    results = [t.outcome_for(b) for t, b in zip(play_games(black, white, starts, rng), p1_is_black)]
+    return MatchStats(wins=results.count(1), draws=results.count(0), losses=results.count(-1))
 
 
 def optimal_move_accuracy(player: Player, positions: Sequence[State], table: solver.Table) -> float:

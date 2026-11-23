@@ -1,0 +1,402 @@
+[
+ {
+  "board": "........\n.....O..\n.....O..\n...OXO..\n..XXO...\n...OX...\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n.XXX....\n...OX...\n..OOX...\n....O...\n.....O..\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n...OX...\n...XOOO.\n..XX.O..\n..X.....\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..O.....\n..XOX...\n...XOXO.\n.....OX.\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..O.....\n..OOX...\n..OOXX..\n...O....\n...O....\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..X.OX..\n...XOO..\n...XO...\n....O...\n....O...\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "....O...\n....O...\n..OXO...\n..XXO...\n...XO...\n........\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n.XXX....\n...XX...\n..OXO...\n...O....\n..O.....\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n....OX..\n..XOX...\n..OXOX..\n.....O..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n..XXXO..\n...XO...\n...OOX..\n......X.\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n...OOO..\n...OXO..\n..O.XXX.\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n...OOOO.\n...XOXO.\n.....X..\n.....X..\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n....X...\n....X...\n..XXX...\n..OOOO..\n......O.\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n...O....\n...O....\n...OX...\n...OXX..\n.OOO....\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n...OOO..\n..XOOX..\n..OX....\n...X....\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..O.....\n..XOX...\n..XOXX..\n..XO....\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..OX.O..\n..XXO...\n.XOOO...\n........\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n.OX.....\n..O.....\n..XOX...\n...XO...\n....XO..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n.O.OX...\n..OXOX..\n...X.O..\n...X....\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n...OOO.O\n...XXXO.\n....XO..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n.....O..\n...OO...\n..OXXX..\n.O.X....\n..X.....\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n...OOO..\n..XXXO..\n...X..O.\n..X.....\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...XOX..\n...XOO..\n...XO...\n....XO..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n....X...\n...OXO..\n...XOO..\n..XO.O..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n.....X..\n..O.X...\n..XOXO..\n...XO.O.\n........\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..XXO...\n...XO...\n..OXO...\n....OX..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...X....\n...XXO..\n...XOO..\n...O.X..\n......X.\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n....X...\n....X...\n.OOOXX..\n..OOO...\n........\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...XXX..\n...XX...\n..OOOO..\n....X...\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n.XXX....\n...OX...\n...OO...\n...OOO..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n....O...\n...OO...\n...OOX..\n...OOX..\n.....X..\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...X....\n...XX...\n.OOOX...\n.O...X..\n.O......\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..OX....\n..XXX...\n...XOOO.\n.....O..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..O.OX..\n..XOX...\n..XXO...\n..X.....\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..OX....\n...OX...\n...XO...\n....XO..\n....X...\n....X...",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n.....X..\n....X...\n..XXO...\n...OXO..\n..O...O.\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...X.OX.\n...XXO..\n...XOO..\n.....O..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n.....O..\n.....OX.\n...OXO..\n...XOO..\n.....O..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...XO...\n...OO...\n..OOX...\n.O...X..\nO.......\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n....O...\n..OO....\n..OXX...\n..OXO...\n..X.....\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n.....O..\n..XXO...\n...XXO..\n...X..O.\n...X....\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "..O.....\n..O.....\n..OXO...\n...XX...\n...XXX..\n........\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n.O......\n.XOX....\n...OX...\n..OXO...\n..X.....\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n......X.\n...OOX..\n...OX...\n...OX...\n..XO....\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...XO...\n...OO...\n..OXO...\n..X.XO..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n....O...\n..XXXO..\n...XO.O.\n...OX...\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..X.....\n...XOO..\n...OXO..\n..O.XO..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n..O..X..\n...OX...\n...XO...\n...OX...\n..O..X..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..XO....\n...OX...\n...OX...\n...OX...\n....XO..\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n...OX...\n..OOXX..\n....OX..\n.....O..\n......O.",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n.O......\n.XOXXX..\n...OX...\n...XO...\n........\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n....O.O.\n..XXXO..\n...XO...\n...O.X..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..X.O...\n...XO...\n...XXO..\n.....XO.\n.....X..\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n....X...\n..OXO...\n.OOOO...\n...XO...\n........\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n....O...\n..XXOO..\n...XO.O.\n....O...\n....O...\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n...X....\n..OXO...\n...XO...\n...XO...\n....O...\n....O...\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...X....\n..OOOO..\n...XOX..\n.....OX.\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..X.....\n..OOOO..\n...XXO..\n....XO..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n..XXX...\nOOOOO...\nX.X.....\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n...OX...\n...OXX..\n...OOOO.\n......X.\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..OX....\n...OXO..\n...XOX..\n.....X..\n.....X..\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n...O....\n...O.O..\n...OO...\n..XOX...\n.X...X..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n...OX...\n..XXOX..\n...O.O..\n..XO....\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n...OOO..\n...XOO..\n..XX..O.\n...X....\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...O....\n..XOX...\n..XXO...\n...OOO..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..OOO...\n..XXXO..\n...XO.O.\n........\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n...OOO..\n...OOX..\n...OOX..\n......X.\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..OX....\n...OOO..\n...XO...\n..XXX...\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n...OX...\n...OOX..\n...O.X..\n..O..X..\n.O......",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..OXX...\n...OXO..\n...OOX..\n...O....\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..O.....\n..OXXXX.\n..OXXX..\n........\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..OX....\n..XXXO..\n...XOO..\n.....O..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...X....\n...XX...\n..OXO...\n...OOO..\n....O...\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n...O....\n...O....\n...OX...\n..XOOO..\n.X...X..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..XX....\n..OXXO..\n...XXO..\n.....O..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n..O.....\n...O....\n...XO...\n...XOOO.\n...X....\n..X.....\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n..X.....\n..X.....\n..XOX...\n.OOOO...\n..X.....\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...XO...\n..XXO...\n..OXOX..\n....O...\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n...O....\n.XXO.X..\n...OXO..\n...XO...\n........\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n...OX...\n.XXXOX..\n.....O..\n.....XO.\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...X..X.\n...XXX..\n..OOOO..\n.....O..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n....O...\n...OO...\n..XXO...\n...OXO..\n.....X..\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...XOO..\n...XXO..\n...XOO..\n.....O..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..O.....\n..XOX...\n.XXXOX..\n.....O..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n.....O..\n.....O..\n...OXO..\n...XXO..\n....XO..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...XOO..\n..XXO...\n...OXX..\n..O.....\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n...O....\n...O..X.\n...OXX..\n...OXX..\n...O....\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..O.....\n..OOX...\n.XOOO...\nX.X.....\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\nX.XXX...\n.XOOO...\n..O.....\n..O.....\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...XXX..\n...XO...\n.OOOO...\n.X......\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n..XXXO..\n...XOO..\n...OOO..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...X....\n...XXO..\n...XXXO.\n.....O.O\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n..XXO...\n...XX...\n..OOOO..\n.....X..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n...X.O..\n...XO...\n...OXX..\n..OX....\n..X.....\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n....O...\n...OO...\n..XXO...\n..XOO...\n.X......\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n....O.O.\n..XXXO..\n...XXO..\n.....O..\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n....X...\n..OOOO..\n...OX...\n...XX...\n....X...\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n...OXX..\n...OOO..\n...XXO..\n..X.....\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n...O....\n..OO....\n...OX...\n..XXXX..\n...O....\n........\n........",
+  "black_to_move": true
+ },
+ {
+  "board": "........\n........\n........\n...OOO..\n...XOO..\n....OXX.\n....O...\n........",
+  "black_to_move": true
+ }
+]

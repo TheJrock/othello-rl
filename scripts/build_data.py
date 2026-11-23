@@ -23,7 +23,7 @@ from othello_rl import evaluate, regret, solver
 
 DATA = Path(__file__).resolve().parents[1] / "data"
 # board -> (plies, count); None = every distinct position
-OPENING_DEFAULTS = {4: (2, None), 6: (4, 100), 8: (4, 100)}
+OPENING_DEFAULTS = {4: (4, None), 6: (6, 100), 8: (6, 100)}  # spec §4.7 (revised Nov 23)
 
 
 def _guard(path: Path, force: bool) -> Path:

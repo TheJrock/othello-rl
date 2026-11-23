@@ -1,6 +1,6 @@
 # Othello Self-Play — Project Spec & Timeline
 
-Companion to `docs/proposal.md` · Written Wed Nov 18, 2026 · Rev. 4 (2×2 design, MADRID-style checkpoint regret, repo scaffold; Nov 19: gated 8×8 add-on, D9 and §4.8)
+Companion to `docs/proposal.md` · Written Wed Nov 18, 2026 · Rev. 4 (2×2 design, MADRID-style checkpoint regret, repo scaffold; Nov 19: gated 8×8 add-on, D9 and §4.8; Nov 23: deeper opening banks, §4.7, and a demo pass rule, §5.1)
 
 | Date | Milestone |
 |---|---|
@@ -202,6 +202,16 @@ othello-rl/
 
 Sanity check: on 6×6 (and 8×8), positional ≫ random and greedy > random.
 
+Measured Nov 23 on the `data/` opening banks (§4.7), each opening played from both sides; score of the first player with its 95% Wilson interval:
+
+| | Games | greedy vs random | positional vs random | positional vs greedy |
+|---|---|---|---|---|
+| 4×4 | 240 | 48% [42–54] | 68% [61–73] | 70% [64–75] |
+| 6×6 | 200 | 63% [56–69] | 82% [76–87] | 79% [73–84] |
+| 8×8 | 200 | 66% [59–72] | 81% [75–86] | 90% [85–93] |
+
+Both checks pass on 6×6 and 8×8. On 4×4, greedy is no better than random: grabbing discs mostly hands over edges and corners on a board that small. That's fine, because 4×4 is judged against the exact solver.
+
 ### 4.4 Solvers (`solver.py`)
 
 - **4×4 full solve:** memoized negamax over win/loss/draw values for every reachable position, giving the value of every (position, move) pair and an optimal policy π\*. The start position should match the published result (4×4 and 6×6 are both reported as second-player wins; confirm the source).
@@ -269,7 +279,8 @@ Replay tuple: `(planes_s, a, r, planes_s', legal_mask_s', done)`. At sample time
 ### 4.7 Evaluation protocol (`evaluate.py`, `regret.py`)
 
 **Standard metrics**
-- **Opening banks:** 4×4: all distinct positions after 2 plies. 6×6 and 8×8: 100 distinct positions after 4 random plies (fixed seed, saved). Each is played with both colors; agents play greedy (ε = 0).
+- **Opening banks:** 4×4: all 120 distinct positions after 4 plies. 6×6 and 8×8: 100 distinct positions after 6 random plies (seed 0, saved in `data/`). Each is played with both colors; agents play greedy (ε = 0).
+  - *Revised Nov 23 (was 2 plies on 4×4, 4 plies on 6×6/8×8).* Shallower banks have too few genuinely different openings. Mirror images and rotations of an opening are the same opening to a symmetric player, and a net trained with D4 augmentation is close to one. At 2 plies, 4×4 has 12 positions but only 3 up to symmetry, and its 24-game matches gave ±20-point intervals. At 4 plies, 6×6 and 8×8 have 236 positions (60 up to symmetry), and a 100-position sample held only 49 different ones. The revised banks hold 31 (4×4) and 97–99 (6×6/8×8) different openings. The cost is more random moves before the agents take over, which is harmless: every opening is played from both sides, so a lopsided opening favors each player once.
 - **Score** = (wins + 0.5·draws) / games, with a 95% Wilson interval.
 - **Per-run summary:** final score (mean of last 3 eval points) · peak · max drawdown after the peak · forgetting events (drops > 10 points below the running max) · Spearman ρ between self-play score and score vs positional.
 - **Cross-play matrix:** 15 evenly spaced checkpoints per run, round robin over the opening bank.
@@ -428,7 +439,7 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 **Fri Nov 20** (~3–4 h)
 - [x] Random / greedy / positional players + network-player wrapper. *(done Nov 23)*
 - [x] Batched game runner (any two players, many games at once). *(done Nov 23)*
-- [ ] Eval harness: opening banks, both colors, score + Wilson CI. Sanity-check opponent strengths.
+- [x] Eval harness: opening banks, both colors, score + Wilson CI. Sanity-check opponent strengths. *(done Nov 23; banks revised, §4.7; results in §4.3)*
 
 **Sat Nov 21** (~3 h)
 - [ ] 4×4 full solver, π\*, eval set, and chance accuracy; check the start-position value.
