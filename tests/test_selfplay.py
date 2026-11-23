@@ -75,3 +75,86 @@ def test_env_cut(trajectories, learner_is_black):
 def test_unknown_mode_raises(trajectories):
     with pytest.raises(ValueError):
         cut_transitions(trajectories[0], True, "minimax")
+
+
+# --- the game runner ----------------------------------------------------------------------------
+
+
+class Recorder:
+    """Wraps a player and records every batch it is asked to act on."""
+
+    def __init__(self, inner, name="recorder"):
+        self.inner, self.name = inner, name
+        self.batches: list[list[E.State]] = []
+
+    def act(self, states, rng):
+        self.batches.append(list(states))
+        return self.inner.act(states, rng)
+
+
+class Extreme:
+    """Deterministic: always the lowest (or highest) legal square, so tests can tell who moved."""
+
+    def __init__(self, highest: bool):
+        self.highest, self.name = highest, "highest" if highest else "lowest"
+
+    def act(self, states, rng):
+        pick = max if self.highest else min
+        return [pick(np.flatnonzero(E.legal_mask(s)[:-1]).tolist()) for s in states]
+
+
+def test_outcome_for_matches_disc_count(trajectories):
+    for traj in trajectories:
+        f = traj.final
+        black, white = (f.me, f.opp) if f.black_to_move else (f.opp, f.me)
+        diff = black.bit_count() - white.bit_count()
+        assert traj.outcome_for(True) == (diff > 0) - (diff < 0) == -traj.outcome_for(False)
+
+
+def test_play_games_batches_one_call_per_player_per_ply(rng):
+    p = Recorder(RandomPlayer())
+    trajs = play_games([p] * 100, [p] * 100, [E.initial(N)] * 100, rng)
+    assert len(p.batches[0]) == 100  # every game's first move in one call
+    assert len(p.batches) <= max(len(t.plies) for t in trajs)  # at most one call per ply
+    moves = [ply for t in trajs for ply in t.plies if ply.action != PASS]
+    assert sum(len(b) for b in p.batches) == len(moves)  # each real move asked for exactly once
+    assert any(ply.action == PASS for t in trajs for ply in t.plies)  # 4×4 random games do pass...
+    assert all(E.legal_moves(s) for b in p.batches for s in b)  # ...but the runner plays them itself
+
+
+def test_play_games_routes_each_ply_to_the_right_player(rng):
+    n = 6
+    low, high = Extreme(False), Extreme(True)
+    white_first = E.step(E.initial(n), int(np.flatnonzero(E.legal_mask(E.initial(n)))[0]))[0]
+    count = 40
+    black = [low if i % 2 else high for i in range(count)]
+    white = [high if i % 3 else low for i in range(count)]
+    starts = [white_first if i % 4 == 0 else E.initial(n) for i in range(count)]
+    trajs = play_games(black, white, starts, rng)
+    for i, traj in enumerate(trajs):
+        assert traj.plies[0].state == starts[i]
+        for ply in traj.plies:
+            if ply.action != E.pass_action(n):
+                mover = black[i] if ply.state.black_to_move else white[i]
+                assert ply.action == mover.act([ply.state], rng)[0]
+
+
+def test_play_games_handles_terminal_starts(rng):
+    over = E.from_string("X" + "." * (N * N - 1))
+    p = RandomPlayer()
+    trajs = play_games([p, p], [p, p], [over, E.initial(N)], rng)
+    assert trajs[0].plies == [] and trajs[0].final == over
+    assert E.is_terminal(trajs[1].final) and trajs[1].plies
+
+
+def test_play_games_is_reproducible():
+    p = RandomPlayer()
+    a = play_games([p] * 20, [p] * 20, [E.initial(6)] * 20, np.random.default_rng(3))
+    b = play_games([p] * 20, [p] * 20, [E.initial(6)] * 20, np.random.default_rng(3))
+    assert [t.plies for t in a] == [t.plies for t in b]
+
+
+def test_play_games_checks_lengths(rng):
+    p = RandomPlayer()
+    with pytest.raises(ValueError):
+        play_games([p], [p, p], [E.initial(N)], rng)

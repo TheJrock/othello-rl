@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .config import Config
-from .engine import State
+from .engine import State, is_terminal, legal_moves, outcome, pass_action, step
 from .players import NetPlayer, Player
 from .replay import Transition
 
@@ -34,7 +34,8 @@ class Trajectory:
 
     def outcome_for(self, black: bool) -> int:
         """+1 / 0 / −1 for Black (black=True) or White, from engine.outcome(self.final)."""
-        raise NotImplementedError("selfplay.Trajectory.outcome_for")
+        o = outcome(self.final)  # for the side to move in the final position
+        return o if self.final.black_to_move == black else -o
 
 
 def play_games(
@@ -44,8 +45,41 @@ def play_games(
     `black_to_move` says who moves first.
 
     Batching: on every ply, group the unfinished games by the player to move (by object identity) and
-    make one `act` call per player. Forced passes are recorded as plies with action = pass."""
-    raise NotImplementedError("selfplay.play_games")
+    make one `act` call per player. Forced passes are recorded as plies with action = pass.
+
+    The runner plays forced passes itself instead of asking the player: pass is the only legal action
+    there, and asking would cost an `act` call (for a NetPlayer, a forward pass) to learn nothing.
+    """
+    if not len(black) == len(white) == len(starts):
+        raise ValueError(f"got {len(black)} black, {len(white)} white, {len(starts)} starts")
+    states = list(starts)
+    plies: list[list[Ply]] = [[] for _ in states]
+    active = [i for i, s in enumerate(states) if not is_terminal(s)]
+
+    def record(i: int, a: int) -> bool:
+        """Play action a in game i; True if the game goes on."""
+        s = states[i]
+        plies[i].append(Ply(s, a))
+        states[i], _, done = step(s, a)
+        return not done
+
+    while active:
+        still_active: list[int] = []
+        groups: dict[int, tuple[Player, list[int]]] = {}
+        for i in active:
+            s = states[i]
+            if legal_moves(s) == 0:  # not terminal (active), so this is a forced pass
+                if record(i, pass_action(s.n)):
+                    still_active.append(i)
+                continue
+            mover = black[i] if s.black_to_move else white[i]
+            groups.setdefault(id(mover), (mover, []))[1].append(i)
+        for mover, idx in groups.values():
+            for i, a in zip(idx, mover.act([states[i] for i in idx], rng), strict=True):
+                if record(i, a):
+                    still_active.append(i)
+        active = sorted(still_active)  # game order, so the grouping (and rng use) is reproducible
+    return [Trajectory(p, s) for p, s in zip(plies, states)]
 
 
 def cut_transitions(traj: Trajectory, learner_is_black: bool, mode: str) -> list[Transition]:

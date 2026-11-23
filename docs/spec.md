@@ -426,7 +426,7 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 
 **Fri Nov 20** (~3–4 h)
 - [x] Random / greedy / positional players + network-player wrapper. *(done Nov 23)*
-- [ ] Batched game runner (any two players, many games at once).
+- [x] Batched game runner (any two players, many games at once). *(done Nov 23)*
 - [ ] Eval harness: opening banks, both colors, score + Wilson CI. Sanity-check opponent strengths.
 
 **Sat Nov 21** (~3 h)
