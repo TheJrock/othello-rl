@@ -342,6 +342,7 @@ Self-play, inference, and evaluation come on top. **On CPU only, the 6×6 plan i
 ### 5.1 What visitors can do
 
 1. **Play the agent** on a 6×6 board, or on 8×8 if the 8×8 agent qualifies (§5.3). Pick a color and pick an opponent snapshot: *Untrained → Early → Midway → Final*.
+   - **Passes are never automatic for the visitor.** With no legal square, the board says so ("No legal moves: you must pass") and the visitor presses a Pass button themselves, so it's clear the pass was forced. When the agent has to pass, the board says so too ("The agent has no legal moves and passes"). A turn with a single legal square is an ordinary turn: the visitor taps it. (The Python game runner auto-plays forced passes, but it only runs bot-vs-bot games for training and evaluation; this rule is for the play view.)
 2. **See what it's thinking.** A toggle overlays the agent's value estimate on each legal square as win probability `(Q+1)/2`.
 3. **Watch it learn.** A slider over training checkpoints updates (a) Q heatmaps on teaching positions and (b) the learning curve, with the flat self-play line (F3) and the current checkpoint marked.
 4. *(Could)* **Watch two snapshots play** each other, or play an A agent vs an N agent.
@@ -473,7 +474,7 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 **Thu Dec 3** (~4–5 h)
 - [ ] Web: scaffold Vite + TS, port the engine, engine parity test passing.
 - [ ] `export.py`: ONNX + Q fixtures; model parity passing (use pilot checkpoints for now).
-- [ ] Play view: board, color choice, snapshot picker, pass/game-over handling, Q overlay. Take the board size from `manifest.json` so 8×8 needs no UI changes.
+- [ ] Play view: board, color choice, snapshot picker, pass handling (the visitor presses Pass themselves; agent passes are announced, §5.1), game over, Q overlay. Take the board size from `manifest.json` so 8×8 needs no UI changes.
 - [ ] **Cut rule:** if play isn't working by tonight, "Watch it learn" moves to Dec 11–16 and the talk uses a static F3.
 
 **Fri Dec 4** (~4–5 h)
