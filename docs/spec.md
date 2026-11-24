@@ -1,6 +1,6 @@
 # Othello Self-Play — Project Spec & Timeline
 
-Companion to `docs/proposal.md` · Written Wed Nov 18, 2026 · Rev. 4 (2×2 design, MADRID-style checkpoint regret, repo scaffold; Nov 19: gated 8×8 add-on, D9 and §4.8; Nov 23: deeper opening banks, §4.7; a demo pass rule, §5.1; both sides' transitions stored, D2; Nov 24: debugging ladder results and 4×4 vs-random bars, §4.6)
+Companion to `docs/proposal.md` · Written Wed Nov 18, 2026 · Rev. 4 (2×2 design, MADRID-style checkpoint regret, repo scaffold; Nov 19: gated 8×8 add-on, D9 and §4.8; Nov 23: deeper opening banks, §4.7; a demo pass rule, §5.1; both sides' transitions stored, D2; Nov 24: debugging ladder results and 4×4 vs-random bars, §4.6; `eps_end` 0.1 and `target_update_every` 250 on all boards, §4.5, with E7 to compare)
 
 | Date | Milestone |
 |---|---|
@@ -268,14 +268,16 @@ Replay tuple: `(planes_s, a, r, planes_s', legal_mask_s', done)`. At sample time
 | Replay capacity | 100k transitions (~13 MB) | 600k transitions (~160 MB) | 3M transitions (≈ last 10% of training, as on 6×6; ~1.4 GB) |
 | Batch / optimizer | 256 / Adam 3e-4 | same | same |
 | Gradient steps | 1 per 16 new transitions, both sides (each sampled ≈ 16×) | same | same |
-| Target net | Hard update every 1,000 gradient steps | same | same |
-| Exploration | ε linear 1.0 → 0.05 over first 20% of games, then 0.05 | same | same |
+| Target net | Hard update every 250 gradient steps (1,000 before Nov 24) | same | same |
+| Exploration | ε linear 1.0 → 0.1 over first 20% of games, then 0.1 (0.05 before Nov 24) | same | same |
 | Loss / clipping | Huber, grad-norm clip 10 | same | same |
 | Eval + checkpoint every | 1k games (30 points) | 5k games (~40 points) | 10k games (~50 points) |
 | Seeds | 5 | 3 | 1 per arm |
 | Device | GPU (`mps`) where available: ~2–5 min/run; a CPU gradient step is ~50 ms even here (§4.8) | GPU (CPU-only exceeds 6 h/run, §4.8) | GPU only (`--device mps` or `cuda`) |
 
 Replay capacities were doubled on Nov 23, when D2 began storing both sides' moves. That keeps each buffer at ≈ 10% of training's transitions.
+
+**Settings change (Nov 24, before any experiment run).** `eps_end` went from 0.05 to 0.1 and `target_update_every` from 1,000 to 250, on all three boards and for all four conditions. The debugging ladder (§4.6) showed slow value propagation: with γ = 1, a value moves back one decision per target update, and a 4×4 run got only ~11–23 updates. It also showed narrow coverage under naive self-play. A one-seed rerun with both changes sped up early learning (N's 4×4 accuracy at 2k games went from 57% to 71%), raised late accuracy 2–3 points on the self-play rungs, and showed no instability. Neither change costs measurable time: a target update is a ~0.2 ms weight copy, which adds ≈ 0.3 s per 6×6 run and ≈ 1.6 s per 8×8 run, and ε doesn't change the number of forward passes or transitions. Target updates per run are now ≈ 92 on 4×4, ≈ 1,600 on 6×6 and ≈ 7,600 on 8×8. The evidence is from 4×4 only. 6×6 and 8×8 already got ~400 and ~1,900 updates per run at 1,000, so the change was applied there for consistency and is untested on those boards. **E7** (§4.8) reruns the old settings on the same code to measure the difference.
 
 ### 4.6 Training loop and opponent pool (`selfplay.py`, `pool.py`, `train.py`)
 
@@ -319,8 +321,21 @@ So "≥ 95% vs random" can only apply from the start position. On the 4×4 bank 
 - **Rung 1 passes.** From the start it scores 96.7% (best possible 98.0%). On the positions it reaches against random, it picks a best-vs-random move 94% of the time, and its Q matches the exact values of its MDP (corr 0.80).
 - **Rungs 2–3 pass on the machinery.** Where their data comes from, both nets play the minimax move ~98–99% of the time, and Q correlates 0.82–0.87 with the exact values. The negamax target is right, and the D2 cutting is too.
 - **The whole-set numbers are a coverage finding, not a bug.** Naive self-play at ε = 0.05 keeps replaying a few lines from the start: ~200 distinct decision positions out of 7,912. Off those lines Q is barely informative (corr ~0.4, MSE ~0.96, about what Q = 0 would score). So 4×4 accuracy plateaus around 73–75% by ~10k games. That's above chance, but far from the ~98% the nets reach on their own lines. This is H1–H2's narrow-distribution story in miniature. Pool sampling (rung 4) should widen coverage if anything does.
-- **Value propagation is slow.** Mean Q in rung 1 rose from 0.25 at 11k games to 0.79 at 26k. With γ = 1, a value moves back one decision per target-net update, and a 4×4 run gets only ~11–23 updates (`target_update_every: 1000`). That's a shared knob, open for the user to decide before E1 (§11).
+- **Value propagation is slow.** Mean Q in rung 1 rose from 0.25 at 11k games to 0.79 at 26k. With γ = 1, a value moves back one decision per target-net update, and a 4×4 run gets only ~11–23 updates (`target_update_every: 1000`). Changed to 250 on Nov 24, below and §4.5.
 - A's loss is ~5× N's because A's targets include the opponent's ε-greedy reply, which is noise to the learner. N's target depends only on the position.
+
+*Rerun with `eps_end: 0.1`, `target_update_every: 250` (Nov 24, `runs/ladder-tuned/`, seed 0).* Means over the last 10 eval points, baseline → rerun:
+
+| | Accuracy, all 7,912 | Q corr, all | Score vs positional | Score vs random |
+|---|---|---|---|---|
+| Rung 1: A vs random | 74.3% → 73.9% | 0.39 → 0.39 | 58.5% → 57.3% | 72.6% → 72.6% |
+| Rung 2: A-naive | 73.8% → 75.5% | 0.41 → 0.43 | 55.6% → 60.5% | 71.6% → 73.8% |
+| Rung 3: N-naive | 75.8% → **78.5%** | 0.43 → 0.47 | 56.3% → 59.1% | 70.8% → 72.8% |
+
+- **Faster early learning comes from `target_update_every`.** ε is nearly identical in both runs for the first 6k games (it decays to `eps_end` over the first 20%), so early gaps are the target update's doing. N's accuracy at 2k games went from 57% to 71%, and at 5k from 72% to 79%. Rung 1's mean Q at 5k went from 0.03 to 0.39, the faster value propagation predicted above. No instability: losses are similar, and nothing collapsed.
+- **Late gains in the self-play rungs are modest (+2–3 points accuracy, +3–5 vs positional) and can't be split between the two knobs.** This is one seed, and within-run jitter is ~±1 point.
+- **ε = 0.1 widens coverage only a little.** In 8,000 self-play games from the final nets, about one buffer's worth, the eval-set positions reached go from ~150 (1.9%) at ε = 0.05 to ~220–270 (2.8–3.4%) at ε = 0.1, before D4 augmentation. The narrowness is structural: one start position and a nearly deterministic policy. The knobs don't fix it; it stays a property of naive self-play for the pool comparison to address.
+- **Decision (Nov 24): adopt both, on every board** (§4.5). `runs/ladder/` (old settings) vs `runs/ladder-tuned/` (new) is a one-seed preview of E7 on 4×4. Keep both directories: `runs/` is not in git. `make ladder` now writes to `runs/ladder-tuned/` and refuses to replace an existing run, so the baseline can't be overwritten by accident.
 
 ### 4.7 Evaluation protocol (`evaluate.py`, `regret.py`)
 
@@ -359,6 +374,7 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 | E4 | *(Could)* A-naive replay-buffer ablation (¼ size), or pool mix 80/20 | 3 seeds | Only with spare compute |
 | P8 | *(Could)* 8×8 pilot: A-naive (`make pilot-8x8`) | 1 | Launch Nov 25, only if gate 1 passed |
 | E6 | *(Could)* 8×8 A pair: A-naive vs A-pool on the frozen code (`make sweep-8x8`) | 2 × 1 seed | Launch Dec 1 (Dec 2 at the latest), only if gate 2 passed |
+| E7 | *(Could)* Settings comparison: rerun with the pre-Nov-24 settings (`eps_end` 0.05, `target_update_every` 1,000) on the same code, compared with E1 / P. 4×4: `make sweep-4x4-old` (all 4 conditions × 5 seeds, ~5 min per run on `mps`). 6×6: `make pilot-6x6-old` (1 seed per condition, GPU hours) | 20 (4×4) + 4 (6×6) | 4×4 any time after E1 launches; 6×6 only with spare compute, never ahead of E2 |
 
 **Compute:** On Tue Nov 24, measure games/s and gradient steps/s on your laptop and server, then fix the 6×6 game budget so one run takes ≤ 6 h. Run as many seeds in parallel on the server as it has cores for (`tmux`), and `rsync` `runs/` back. **Fallback:** if the 12 E2 runs can't finish by Thu Dec 3, run 3 seeds for the A pair and 2 seeds for the N pair (10 runs).
 
@@ -394,6 +410,7 @@ Self-play, inference, and evaluation come on top. **On CPU only, gradient steps 
 | F8 | 4×4: checkpoint-estimated vs true regret | report (slides if time) |
 | T1 | Summary table: §4.7 numbers, mean ± std across seeds, with the (pool − naive) gap per target type (H4) | slides, report |
 | F9 | *(Could, E6)* 8×8: score vs positional and self-play score, A-naive vs A-pool, one seed each (F2/F3 layout, same code) | report; slides if done by Dec 6 |
+| F10 | *(Could, E7)* 4×4 accuracy vs games (F1 layout), old vs new settings, per condition with seed bands. Does faster value propagation help every condition equally, or does it change the naive-vs-pool gap? | report (discussion or appendix) |
 
 ---
 
@@ -606,7 +623,7 @@ No new experiments in report week. Extra seeds may run in the background if they
 
 4–6 pages, single-column conference template (NeurIPS or ICLR style). Figures count toward the limit; references and the appendix don't. The limit is soft, but no padding: every paragraph has a purpose and figures stay modest (full width, ≤ 1.7 in tall). Working budget: ~2,600 words + ~1.3 pages of figures/tables ≈ 5.5 pages.
 
-Abstract · 1 Introduction and question · 2 Background and related work (self-play, DQN, opponent pools, MADRID checkpoint regret) · 3 Formulation (MDP, both views, targets, passes) · 4 Method (network, Double DQN, symmetries, pool) · 5 Experimental setup (2×2, boards, seeds, budgets, opponents, solvers, metrics, regret) · 6 Results · 7 Discussion (what self-play metrics hide; when pools matter) · 8 Limitations and future work (a full 8×8 study with the N row and more seeds, prioritized pool sampling, search, MAP-Elites over positions) · 9 Conclusion · Appendix (hyperparameters, validation, demo link, 8×8 A pair if E6 ran)
+Abstract · 1 Introduction and question · 2 Background and related work (self-play, DQN, opponent pools, MADRID checkpoint regret) · 3 Formulation (MDP, both views, targets, passes) · 4 Method (network, Double DQN, symmetries, pool) · 5 Experimental setup (2×2, boards, seeds, budgets, opponents, solvers, metrics, regret) · 6 Results · 7 Discussion (what self-play metrics hide; when pools matter) · 8 Limitations and future work (a full 8×8 study with the N row and more seeds, prioritized pool sampling, search, MAP-Elites over positions) · 9 Conclusion · Appendix (hyperparameters and the Nov 24 settings change with E7/F10 if run, validation, demo link, 8×8 A pair if E6 ran)
 
 **Citation to settle before writing the validation appendix:** our 4×4 solve reproduces the published perfect-play result exactly, *White wins 3–11* (§4.4). So far that figure has only been seen in Wikipedia's *Computer Othello* article (via a mirror), which isn't a citable primary source. Check Takizawa (2023) below for a primary citation of the 4×4 (and 6×6) result. If it doesn't give one, follow that article's references. The 6×6 result (White wins 16–20) is credited to Joel Feinstein (1993, *British Othello Federation* newsletter).
 
@@ -623,4 +640,4 @@ Abstract · 1 Introduction and question · 2 Background and related work (self-p
 - [ ] Server specs: CPU cores, GPU? These decide whether all 12 E2 runs fit and whether 8×8 can run beside them (Nov 24). A GPU matters for 6×6 too: on CPU, gradient steps alone take ~11.6 h per 6×6 run with both sides stored, about twice the 6 h/run limit (§4.8). Without enough GPU, use the `transitions_per_grad_step: 32` fallback.
 - [x] Demo URL: `othello.johnnygoodlad.dev` (portfolio is a project site with a custom domain; §5.5).
 - [x] Opponent transitions: the instructor asked for the opponent's moves to be included in training. D2 was revised on Nov 23 to store both sides' moves in all four conditions. `pool_p_latest` stays at 0.5, and the resulting A-pool dilution (~25% past-snapshot environment) goes in the report (D2).
-- [ ] Shared knobs before E1 (decide by Wed Nov 25; the same for all four conditions). The ladder (§4.6) found two things. (a) Naive self-play at ε = 0.05 covers only ~200 of 7,912 positions, so 4×4 accuracy plateaus at ~75%. (b) Value propagation is slow, with only ~11–23 target updates per 4×4 run. Options: keep the §4.5 settings, so coverage is part of the result, or change `eps_end` (e.g. 0.1) and/or `target_update_every` (e.g. 250), checked with one quick ladder rerun first.
+- [x] Shared knobs before E1 (decide by Wed Nov 25; the same for all four conditions). The ladder (§4.6) found two things. (a) Naive self-play at ε = 0.05 covers only ~200 of 7,912 positions, so 4×4 accuracy plateaus at ~75%. (b) Value propagation is slow, with only ~11–23 target updates per 4×4 run. Options: keep the §4.5 settings, so coverage is part of the result, or change `eps_end` (e.g. 0.1) and/or `target_update_every` (e.g. 250), checked with one quick ladder rerun first. *Rerun done Nov 24 (§4.6): `target_update_every: 250` clearly speeds early learning. Both knobs together add +2–3 points of late accuracy on the self-play rungs. ε = 0.1 widens coverage only from ~2% to ~3%. Decided Nov 24: both adopted on all three boards (§4.5). The old settings stay available as E7 (§4.8) for a comparison in the report.*

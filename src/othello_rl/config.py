@@ -56,12 +56,12 @@ class Config:
     batch_size: int = 256
     lr: float = 3e-4
     transitions_per_grad_step: int = 16
-    target_update_every: int = 1_000  # gradient steps between hard target-net updates
+    target_update_every: int = 250  # gradient steps between hard target-net updates (1_000 before Nov 24)
     grad_clip: float = 10.0
 
     # --- exploration (both players play ε-greedy with the same ε)
     eps_start: float = 1.0
-    eps_end: float = 0.05
+    eps_end: float = 0.1  # 0.05 before Nov 24 (spec §4.5)
     eps_decay_frac: float = 0.2  # fraction of `games` over which ε decays linearly
 
     # --- opponent pool (used only when sampling == "pool")
