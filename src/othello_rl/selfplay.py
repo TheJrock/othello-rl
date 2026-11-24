@@ -16,9 +16,10 @@ from dataclasses import dataclass
 import numpy as np
 
 from .config import Config
-from .engine import State, is_terminal, legal_moves, outcome, pass_action, step
+from .engine import State, is_terminal, legal_mask, legal_moves, outcome, pass_action, step, to_planes
 from .players import NetPlayer, Player
 from .replay import Transition
+from .targets import TARGET_MODES
 
 
 @dataclass(frozen=True)
@@ -96,7 +97,35 @@ def cut_transitions(traj: Trajectory, learner_is_black: bool, mode: str) -> list
     In both modes r is from the learner's perspective (+1 / 0 / −1) and non-zero only when done;
     mask2 = engine.legal_mask(s2), which is all False when done. Raise ValueError for an unknown mode.
     """
-    raise NotImplementedError("selfplay.cut_transitions")
+    if mode not in TARGET_MODES:
+        raise ValueError(f"unknown target mode {mode!r}; expected one of {TARGET_MODES}")
+    # states[i] is the position before ply i; states[-1] is the final (terminal) position.
+    states = [ply.state for ply in traj.plies] + [traj.final]
+    last = len(traj.plies)
+    r_final = float(traj.outcome_for(learner_is_black))
+    mine = [i for i, ply in enumerate(traj.plies) if ply.state.black_to_move == learner_is_black]
+    if mode == "env":  # the environment absorbs the learner's forced passes
+        mine = [i for i in mine if traj.plies[i].action != pass_action(traj.final.n)]
+    # The index of each transition's s2 in `states`.
+    if mode == "negamax":
+        nexts = [i + 1 for i in mine]  # right after the move: the opponent to move
+    else:
+        nexts = mine[1:] + [last]  # the learner's next real decision, or the end of the game
+
+    out = []
+    for i, j in zip(mine, nexts):
+        done = j == last
+        out.append(
+            Transition(
+                s=to_planes(states[i]),
+                a=traj.plies[i].action,
+                r=r_final if done else 0.0,
+                s2=to_planes(states[j]),  # when done, s2 is the final board; targets ignore it
+                mask2=legal_mask(states[j]),
+                done=done,
+            )
+        )
+    return out
 
 
 def collect(
