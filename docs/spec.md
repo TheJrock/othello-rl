@@ -224,6 +224,8 @@ Both checks pass on 6×6 and 8×8. On 4×4, greedy is no better than random: gra
 ### 4.5 DQN (`nets.py`, `replay.py`, `targets.py`)
 
 **Network** (small, ONNX-friendly, no batch norm): trunk of L conv layers (3×3, 64 channels, ReLU, same padding) → head: 1×1 conv to 2 channels → flatten → linear → N²+1 outputs → `tanh`. L = 3 for 4×4, L = 4 for 6×6, and L = 5 for 8×8. About 120k parameters (~0.5 MB); about 160k on 8×8.
+- *Exact counts (Nov 23):* 76,339 (4×4), 115,407 (6×6), 158,019 (8×8).
+- **No ReLU after the 1×1 head conv. This is deliberate.** With one there (as an early `nets.py` docstring had it), both head channels start out negative on every input in 15–25% of initializations. The output is then constant, no gradient reaches the trunk, and that seed never learns, which would look like an RL failure. Without the ReLU, the head is a linear read-out of the trunk and can't die. `tests/test_nets.py` checks 50 initialization seeds per board size.
 
 **Loss (Double DQN, γ = 1).** The only line that differs between the two target types is the sign:
 ```
@@ -243,6 +245,11 @@ Replay tuple: `(planes_s, a, r, planes_s', legal_mask_s', done)`. At sample time
 **Target unit tests.**
 - N: (1) a terminal winning move gives y = +1 for the mover; (2) across a forced-pass state, the sign flips twice correctly; (3) no NaNs when `s'` is terminal.
 - A: (4) the opponent's reply ends the game → `r` is from the learner's perspective; (5) the opponent has no move → the learner moves again and `s'` is correct; (6) the learner has no move → the environment auto-passes.
+- *Implemented Nov 23.* Tensor-level cases are in `tests/test_targets.py`. Cases (1)–(6) are checked end to end in `tests/test_selfplay.py` with the 4×4 solver's exact values standing in for a perfect Q:
+  - **N:** every negamax target from random games equals the exact value of the move.
+  - **A against a perfect opponent:** every env target also equals the exact value.
+  - **A against a random opponent:** some env targets differ from the exact value. This is D1 in one test: A learns value against *its* opponents.
+  - Each test also checks that its games contain the pass and terminal cases.
 
 **4×4 Q-vs-solver MSE applies to N only.** A's Q estimates value against its training opponents, not the minimax value. Optimal-move accuracy applies to both.
 
@@ -447,9 +454,9 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 - [x] 4×4 full solver, π\*, eval set, and chance accuracy; check the start-position value. *(done Nov 23; White wins 3–11, matches published, §4.4)*
 
 **Mon Nov 23** (~4–5 h)
-- [ ] DQN core: network, replay buffer, Double-DQN loss with a `target: negamax | env` switch, masking, symmetry at sample time. Use `cfg.device` throughout so runs can use `cuda` or `mps`.
-- [ ] A-mode environment step (opponent replies + auto-passes).
-- [ ] Target unit tests for both modes (§4.5).
+- [x] DQN core: network, replay buffer, Double-DQN loss with a `target: negamax | env` switch, masking, symmetry at sample time. Use `cfg.device` throughout so runs can use `cuda` or `mps`. *(done Nov 23. Head ReLU removed, §4.5. Smoke test: offline negamax on 5,000 random 4×4 games reached 79% optimal-move accuracy (chance 49%) after 8,000 steps, ~1 min on `mps`.)*
+- [x] A-mode environment step (opponent replies + auto-passes). *(done Nov 23: `selfplay.cut_transitions`, both modes)*
+- [x] Target unit tests for both modes (§4.5). *(done Nov 23; exact-value checks, §4.5)*
 
 **Tue Nov 24** (~4–5 h)
 - [ ] Debugging ladder rungs 1–3 on 4×4 (§4.6), with JSONL logging.
@@ -561,10 +568,14 @@ No new experiments in report week. Extra seeds may run in the background if they
 
 Abstract · 1 Introduction and question · 2 Background and related work (self-play, DQN, opponent pools, MADRID checkpoint regret) · 3 Formulation (MDP, both views, targets, passes) · 4 Method (network, Double DQN, symmetries, pool) · 5 Experimental setup (2×2, boards, seeds, budgets, opponents, solvers, metrics, regret) · 6 Results · 7 Discussion (what self-play metrics hide; when pools matter) · 8 Limitations and future work (a full 8×8 study with the N row and more seeds, prioritized pool sampling, search, MAP-Elites over positions) · 9 Conclusion · Appendix (hyperparameters, validation, demo link, 8×8 A pair if E6 ran)
 
+**Citation to settle before writing the validation appendix:** our 4×4 solve reproduces the published perfect-play result exactly, *White wins 3–11* (§4.4). So far that figure has only been seen in Wikipedia's *Computer Othello* article (via a mirror), which isn't a citable primary source. Check Takizawa (2023) below for a primary citation of the 4×4 (and 6×6) result. If it doesn't give one, follow that article's references. The 6×6 result (White wins 16–20) is credited to Joel Feinstein (1993, *British Othello Federation* newsletter).
+
 ## 10. References
 
 - Samvelyan, Paglieri, Jiang, Parker-Holder, Rocktäschel. *Multi-Agent Diagnostics for Robustness via Illuminated Diversity* (MADRID). AAMAS 2024. arXiv:2401.13460. (Local PDF kept out of the repo.)
 - Lin, Huang, Pearce, Chen, Tu. *TiZero: Mastering Multi-Agent Football with Curriculum Learning and Self-Play.* AAMAS 2023. (MADRID's ref. [29]; source of the checkpoints MADRID evaluates.)
+- Takizawa. *Othello is Solved.* arXiv:2310.19387, 2023. https://arxiv.org/abs/2310.19387. *To check:* does it report the 4×4 (White wins 3–11) and 6×6 (White wins 16–20) results, and whom does it credit? (§9 note.)
+- *Computer Othello* (Wikipedia; mirror: https://www.wikiwand.com/en/articles/Computer_Othello). Where the exact 4×4 score was found. A lead to primary sources only; don't cite it in the report.
 
 ## 11. Open items
 

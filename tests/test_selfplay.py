@@ -158,3 +158,97 @@ def test_play_games_checks_lengths(rng):
     p = RandomPlayer()
     with pytest.raises(ValueError):
         play_games([p], [p, p], [E.initial(N)], rng)
+
+
+# --- spec §4.5 target tests, end to end: cut + targets against exact 4×4 values -----------------
+# With the solver's exact values standing in for a perfect Q-function, the Bellman target of every
+# transition must equal the exact value of the move. Any sign, pass or terminal mistake in
+# cut_transitions or td_targets breaks the equality somewhere in a few hundred random games.
+
+
+@pytest.fixture(scope="module")
+def table():
+    from othello_rl import solver
+
+    return solver.solve_4x4()
+
+
+def state_from_planes(planes: np.ndarray) -> E.State:
+    bits = 1 << np.arange(N * N, dtype=object)
+    return E.State(int(bits[planes[0].ravel() > 0].sum()), int(bits[planes[1].ravel() > 0].sum()), N)
+
+
+def exact_targets(table, transitions, mode):
+    """(td_targets with exact Q as both online and target net, exact Q(s, a)) for each transition."""
+    import torch
+
+    from othello_rl import solver
+    from othello_rl.targets import td_targets
+
+    q2 = np.stack([solver.child_values(table, state_from_planes(tr.s2)) for tr in transitions])
+    q2 = torch.from_numpy(np.nan_to_num(q2, nan=0.0)).float()  # illegal entries are masked anyway
+    y = td_targets(
+        torch.tensor([tr.r for tr in transitions]),
+        torch.tensor([tr.done for tr in transitions]),
+        q2,
+        q2,
+        torch.from_numpy(np.stack([tr.mask2 for tr in transitions])),
+        mode,
+    )
+    q_sa = [solver.child_values(table, state_from_planes(tr.s))[tr.a] for tr in transitions]
+    return y.numpy(), np.array(q_sa, dtype=np.float32)
+
+
+def games_with_learner(learner, opponent, count, rng):
+    """`count` games from the start and from every 4×4 opening, the learner as Black in half."""
+    from othello_rl.evaluate import opening_bank
+
+    starts = [E.initial(N)] * count + opening_bank(N, plies=4, count=None, seed=0)
+    as_black = [i % 2 == 0 for i in range(len(starts))]
+    black = [learner if b else opponent for b in as_black]
+    white = [opponent if b else learner for b in as_black]
+    return list(zip(play_games(black, white, starts, rng), as_black))
+
+
+def test_negamax_targets_match_exact_values(table, rng):
+    p = RandomPlayer()
+    games = games_with_learner(p, p, 200, rng)
+    trs = [tr for traj, black in games for tr in cut_transitions(traj, black, "negamax")]
+    y, q_sa = exact_targets(table, trs, "negamax")
+    np.testing.assert_array_equal(y, q_sa)
+    # The spec §4.5 cases all occur: (1) a winning last move, (2) s2 a forced-pass state, (3) done rows.
+    assert any(tr.done and tr.r == 1.0 for tr in trs)
+    assert any(tr.mask2[PASS] for tr in trs)
+    # done only when the learner's own ply ended the game; otherwise its last transition bootstraps
+    learner_ended = sum(traj.plies[-1].state.black_to_move == black for traj, black in games)
+    assert sum(tr.done for tr in trs) == learner_ended < len(games)
+
+
+def test_env_targets_match_exact_values_against_a_perfect_opponent(table, rng):
+    """Against a perfect opponent, value-against-the-opponent is the minimax value, so the env-mode
+    target (+Q of the learner's next decision) must also equal Q*(s, a)."""
+    from othello_rl.solver import PerfectPlayer
+
+    games = games_with_learner(RandomPlayer(), PerfectPlayer(table), 200, rng)
+    trs = [tr for traj, black in games for tr in cut_transitions(traj, black, "env")]
+    y, q_sa = exact_targets(table, trs, "env")
+    np.testing.assert_array_equal(y, q_sa)
+    # The spec §4.5 cases all occur: (4) the opponent's reply ends the game, (5) the opponent passes
+    # so the learner moves again, (6) the learner's forced pass is absorbed.
+    plies = [(ply, black) for traj, black in games for ply in traj.plies]
+    assert any(ply.action == PASS and ply.state.black_to_move != black for ply, black in plies)
+    assert any(ply.action == PASS and ply.state.black_to_move == black for ply, black in plies)
+    assert any(
+        traj.plies and traj.plies[-1].state.black_to_move != black and traj.plies[-1].action != PASS
+        for traj, black in games
+    )
+
+
+def test_env_targets_depend_on_the_opponent(table, rng):
+    """Spec D1 in one test: against a weak opponent, env-mode targets are not the minimax value.
+    Q learns the value of a move against *this* opponent, which is why the opponent pool can matter."""
+    p = RandomPlayer()
+    games = games_with_learner(p, p, 200, rng)
+    trs = [tr for traj, black in games for tr in cut_transitions(traj, black, "env")]
+    y, q_sa = exact_targets(table, trs, "env")
+    assert (y > q_sa).any()  # a random opponent often throws away its advantage

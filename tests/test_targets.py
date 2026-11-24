@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from othello_rl.targets import masked_argmax, td_targets
+from othello_rl.targets import masked_argmax, td_loss, td_targets
 
 
 def t(x, dtype=torch.float32):
@@ -62,3 +62,50 @@ def test_unknown_mode_raises():
         td_targets(
             t([0.0]), t([False], torch.bool), t([[0.0, 0.0, 0.0]]), t([[0.0, 0.0, 0.0]]), ALL_LEGAL, "minimax"
         )
+
+
+# --- the loss (small real networks; still no engine) --------------------------------------------
+
+
+@pytest.mark.parametrize("mode", ["env", "negamax"])
+def test_td_loss_is_a_semi_gradient_huber_loss(mode):
+    import copy
+
+    from othello_rl.nets import QNet
+    from othello_rl.replay import Batch
+
+    torch.manual_seed(0)
+    online = QNet(4, channels=8, layers=2)
+    target_net = copy.deepcopy(online)
+    with torch.no_grad():  # make the target net differ, so Double DQN's two roles are distinguishable
+        for p in target_net.parameters():
+            p.add_(0.1 * torch.randn_like(p))
+    b = 6
+    batch = Batch(
+        s=torch.rand(b, 3, 4, 4),
+        a=torch.randint(0, 17, (b,)),
+        r=t([0.0, 0.0, 0.0, 1.0, -1.0, 0.0]),
+        s2=torch.rand(b, 3, 4, 4),
+        mask2=torch.rand(b, 17) < 0.5,
+        done=t([False, False, False, True, True, False], torch.bool),
+    )
+    batch.mask2[batch.done] = False  # terminal s2 has no legal actions
+    batch.mask2[~batch.done, 0] = True  # every live s2 has at least one
+
+    loss, info = td_loss(online, target_net, batch, mode)
+    loss.backward()
+
+    with torch.no_grad():
+        y = td_targets(batch.r, batch.done, online(batch.s2), target_net(batch.s2), batch.mask2, mode)
+    q_sa = online(batch.s)[torch.arange(b), batch.a]
+    assert loss.item() == pytest.approx(torch.nn.functional.smooth_l1_loss(q_sa, y).item())
+    assert set(info) == {"loss", "mean_q", "mean_target"}
+    assert info["mean_target"] == pytest.approx(y.mean().item())
+    assert all(p.grad is None for p in target_net.parameters())  # the target net is never trained
+
+    # Gradients flow only through Q(s, a): identical to differentiating against a constant target.
+    got = [p.grad.clone() for p in online.parameters()]
+    online.zero_grad()
+    torch.nn.functional.smooth_l1_loss(online(batch.s)[torch.arange(b), batch.a], y).backward()
+    for g, p in zip(got, online.parameters()):
+        torch.testing.assert_close(g, p.grad)
