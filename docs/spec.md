@@ -388,6 +388,24 @@ Measured Nov 19 on the laptop (M1 Pro): one Double-DQN gradient step at batch 25
 
 The 4×4 row is from the debugging ladder: a whole 30k-game run took 5½ min on `mps` with two runs sharing the GPU, and 2¼ min for rung 1, which stores only the learner's moves (≈ 0.38 steps per game).
 
+**Whole-loop measurement (Nov 24, laptop M1 Pro, `scripts/throughput.py`).** The script times the real training code: self-play rounds (naive, and pool-style with 8 distinct opponent networks as the worst case), full gradient steps (replay sampling with D4 augmentation, three forward passes, backward, clipping, Adam), and one eval point. It then projects a full run. On the GPU the real step is slower than the bare network step above (11.5 vs 7.6 ms on 6×6) because of the CPU-side sampling and three forward passes. Run hours are for the current budgets (6×6 200k games, 8×8 500k placeholder) at `transitions_per_grad_step` 16 / 32, pool-style:
+
+| | Self-play (naive / pool) | Gradient step | Eval point | Run hours, tpgs 16 / 32 | Games in the limit, tpgs 16 |
+|---|---|---|---|---|---|
+| 6×6 `mps` | 2.5–2.8 / 3.6 ms per game | 11.5 ms | 1.0 s | **1.5 / 0.8 h** | ~820k in 6 h |
+| 6×6 CPU, 1 thread | 3.7 / 4.7 ms | 89.7 ms | 1.3 s | 10.2 / 5.3 h | ~118k |
+| 6×6 CPU, 4 threads (fastest) | 2.6 / 3.6 ms | 75.6 ms | 1.0 s | 8.6 / 4.4 h | ~140k |
+| 6×6 CPU, 8 threads | 2.6 / 4.4 ms | 103.7 ms | 1.2 s | 11.8 / 6.0 h | ~102k |
+| 8×8 `mps` | 5.9 / 7.7 ms | 15.5 ms | 2.6 s | **9.2 / 5.1 h** | ~1.31M in 24 h |
+| 8×8 CPU, 1 thread | 21.5 / 23.7 ms | 324 ms | 8.1 s | 172 / 88 h | ~69k |
+| 8×8 CPU, 4 threads | 11.1 / 16.6 ms | 172 ms | 4.8 s | 92 / 47 h | ~130k |
+
+Several 6×6 runs sharing the laptop GPU (2 torch threads each): 2 at once take 15 ms per step and 1.8–2.0 h per run; 4 at once take 20–23 ms and 2.4–2.8 h per run. Four together finish ~1.5 runs per hour, about twice one alone. At that rate the laptop GPU alone could do all 12 E2 runs in three batches of four, ~8½ h at 200k games. Gradient steps dominate everywhere. Self-play is ≤ 15% of a GPU run, and evaluation is negligible: under 3 min per run on every board.
+
+- **6×6:** 200k games fits the 6 h limit easily on the laptop GPU at `transitions_per_grad_step: 16`, so no fallback is needed there. On a CPU, 16 doesn't fit (8.6 h even at the best thread count), and 32 does (4.4–5.3 h).
+- **8×8:** 500k games takes ~9 h on the laptop GPU alone, so a 24 h budget fits ~1.3M games. CPU is out (≥ 92 h).
+- **Still open (server):** cores, GPU, and the same script there (§11). Where E2 runs decides the rest. If the server has a CUDA GPU, E2 goes there, the laptop GPU is free for 8×8, and gate 1 passes. If the server is CPU-only, E2 must use either the laptop GPU at 16 or the server CPU at 32 for every condition. In the first case 8×8 can only use the laptop GPU after E2 finishes.
+
 Self-play, inference, and evaluation come on top. **On CPU only, gradient steps alone take ~11.6 h per 6×6 run, about twice the 6 h limit, so 6×6 needs a GPU.** If one isn't available for all 12 runs, set `transitions_per_grad_step: 32` for every condition. That restores ≈ 1 step per game, with each transition sampled ≈ 8× instead of 16×. Decide this at the Nov 24 throughput measurement, before E1. Runs that share cores with `--torch-threads 1` are slower still. Train on a GPU wherever one is available: the laptop's (`DEVICE=mps`) is 14–18× faster than its CPU on this network.
 
 **8×8 gates (D9).** 8×8 runs only if both gates pass. If either fails, 8×8 returns to Won't and nothing else in the plan changes.
@@ -518,8 +536,8 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 **Tue Nov 24** (~4–5 h)
 - [x] Debugging ladder rungs 1–3 on 4×4 (§4.6), with JSONL logging. *(done Nov 24; results in §4.6)*
 - [x] N must show Q correlating with solver values. Both must show accuracy clearly above chance and ≥ 90% vs random. Run E0 if stuck. *(Nov 24: passed on the positions the nets actually play, 98–99% accuracy and Q corr 0.82–0.87. Whole-set accuracy is 73–75% vs 49.4% chance. "≥ 90% vs random" was revised: π\* itself scores 77.8% on the 4×4 bank and 88.1% from the start, §4.6. E0 not needed: the nets fit what they visit, and the shortfall is coverage.)*
-- [ ] Measure throughput on laptop (CPU and `mps`) and server, for 6×6 and 8×8; fix the 6×6 budget and whether 12 runs fit (§4.8 fallback).
-- [ ] **8×8 gate 1** (§4.8): set the 8×8 game budget, or drop 8×8.
+- [ ] Measure throughput on laptop (CPU and `mps`) and server, for 6×6 and 8×8; fix the 6×6 budget and whether 12 runs fit (§4.8 fallback). *(Laptop done Nov 24, §4.8: 6×6 is 1.5 h/run on `mps`, and 4 runs share the GPU at ~2× the throughput of one. Server pending: run `scripts/throughput.py` there.)*
+- [ ] **8×8 gate 1** (§4.8): set the 8×8 game budget, or drop 8×8. *(Nov 24: 500k games is ~9 h on the laptop GPU; up to ~1.3M fit in 24 h. It passes if E2 doesn't need the laptop GPU, which depends on the server.)*
 
 **Wed Nov 25** (~4 h) — **M1**
 - [ ] Opponent pool, checkpointing, YAML configs, run directories with commit hash.
@@ -637,7 +655,7 @@ Abstract · 1 Introduction and question · 2 Background and related work (self-p
 ## 11. Open items
 
 - [x] Presentation: ~15 minutes. Report: 4–6 pages in a single-column conference template (IEEE, NeurIPS, ICLR, or equivalent). Figures count toward the pages, references and the appendix don't; the limit is soft but no filler or oversized figures (Nov 19).
-- [ ] Server specs: CPU cores, GPU? These decide whether all 12 E2 runs fit and whether 8×8 can run beside them (Nov 24). A GPU matters for 6×6 too: on CPU, gradient steps alone take ~11.6 h per 6×6 run with both sides stored, about twice the 6 h/run limit (§4.8). Without enough GPU, use the `transitions_per_grad_step: 32` fallback.
+- [ ] Server specs: CPU cores, GPU? These decide whether all 12 E2 runs fit and whether 8×8 can run beside them (Nov 24). *Run on the server: `nproc`, `nvidia-smi`, and `scripts/throughput.py` for 6×6 and 8×8 (CPU with `--torch-threads 1`, plus `--device cuda` if it has a GPU), with `--json`.* A GPU matters for 6×6 too: on CPU, gradient steps alone take ~11.6 h per 6×6 run with both sides stored, about twice the 6 h/run limit (§4.8). Without enough GPU, use the `transitions_per_grad_step: 32` fallback.
 - [x] Demo URL: `othello.johnnygoodlad.dev` (portfolio is a project site with a custom domain; §5.5).
 - [x] Opponent transitions: the instructor asked for the opponent's moves to be included in training. D2 was revised on Nov 23 to store both sides' moves in all four conditions. `pool_p_latest` stays at 0.5, and the resulting A-pool dilution (~25% past-snapshot environment) goes in the report (D2).
 - [x] Shared knobs before E1 (decide by Wed Nov 25; the same for all four conditions). The ladder (§4.6) found two things. (a) Naive self-play at ε = 0.05 covers only ~200 of 7,912 positions, so 4×4 accuracy plateaus at ~75%. (b) Value propagation is slow, with only ~11–23 target updates per 4×4 run. Options: keep the §4.5 settings, so coverage is part of the result, or change `eps_end` (e.g. 0.1) and/or `target_update_every` (e.g. 250), checked with one quick ladder rerun first. *Rerun done Nov 24 (§4.6): `target_update_every: 250` clearly speeds early learning. Both knobs together add +2–3 points of late accuracy on the self-play rungs. ε = 0.1 widens coverage only from ~2% to ~3%. Decided Nov 24: both adopted on all three boards (§4.5). The old settings stay available as E7 (§4.8) for a comparison in the report.*
