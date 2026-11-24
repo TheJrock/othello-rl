@@ -1,6 +1,6 @@
 # Othello Self-Play — Project Spec & Timeline
 
-Companion to `docs/proposal.md` · Written Wed Nov 18, 2026 · Rev. 4 (2×2 design, MADRID-style checkpoint regret, repo scaffold; Nov 19: gated 8×8 add-on, D9 and §4.8; Nov 23: deeper opening banks, §4.7; a demo pass rule, §5.1; both sides' transitions stored, D2; Nov 24: debugging ladder results and 4×4 vs-random bars, §4.6; `eps_end` 0.1 and `target_update_every` 250 on all boards, §4.5, with E7 to compare; throughput on laptop and server, pilot budgets and gate 1, §4.8 and §6)
+Companion to `docs/proposal.md` · Written Wed Nov 18, 2026 · Rev. 4 (2×2 design, MADRID-style checkpoint regret, repo scaffold; Nov 19: gated 8×8 add-on, D9 and §4.8; Nov 23: deeper opening banks, §4.7; a demo pass rule, §5.1; both sides' transitions stored, D2; Nov 24: debugging ladder results and 4×4 vs-random bars, §4.6; `eps_end` 0.1 and `target_update_every` 250 on all boards, §4.5, with E7 to compare; throughput on laptop and server, pilot budgets and gate 1, §4.8 and §6; the opponent pool and why training opponents explore, §4.6; E1 results, §4.8)
 
 | Date | Milestone |
 |---|---|
@@ -287,6 +287,13 @@ Replay capacities were doubled on Nov 23, when D2 began storing both sides' move
 - The learner plays Black in half the games and White in the other half. Both sides play ε-greedy with the current ε. **Both sides' transitions are stored, each from its own perspective (D2).** For "mover", read "whichever side the transition belongs to":
   - **N transition:** one ply by the mover, `s → s'` (the other side to move, possibly a forced-pass state).
   - **A transition:** the mover's ply + the other side's reply + any forced passes, `s → s'` (the mover to move again with a legal square, or terminal).
+- **Why the opponent explores too (Nov 24).** Training opponents are ε-greedy, not greedy, for three reasons:
+  1. In naive play the opponent *is* the learner, and D2 stores its moves as training data. A greedy opponent side would leave half the data without exploration, and Q-learning only learns the value of moves it tries.
+  2. Naive and pool should differ only in *who* the opponent is, not in how noisy it is. Greedy snapshots against an ε-greedy naive opponent would confound E1.
+  3. Coverage is already the bottleneck: naive training reaches ~3% of the 4×4 eval positions (ladder results below). A greedy frozen snapshot plays the same move in a given position every time, so it would narrow coverage further.
+  - *The cost, for the report:* A's target bootstraps through the opponent's actual reply, so A learns values against an opponent that plays a random move with probability ε (0.1 late in training), not against its best play. N's target takes the max over the replies, so the opponent's ε only changes which positions N sees. This is why A's loss is ~5× N's (ladder results below).
+  - ε is separate from pool sampling. ε is rolled every move, for both sides. `pool_p_latest` is rolled once per group per round and picks which network plays. The untrained game-0 snapshot isn't a random player: its weights are random but fixed, so it plays the same arbitrary move in a given position every time.
+  - Evaluation is greedy for every network (ε = 0, §4.7), and its variety comes from the opening bank. `learner_score` comes from training games with ε on, so it isn't an eval score.
 - **Naive:** opponent = the current online network.
 - **Pool:** add a frozen copy every checkpoint interval (keep all). Each round, split the B games into 8 groups. Each group's opponent is the latest network with p = 0.5, otherwise one drawn uniformly from past snapshots. (MADRID uses checkpoints only *after* training, so it doesn't prescribe a training-time sampling rule. This 50/50 mix is a common default; if you want a cited rule, check how the TiZero paper, its ref. [29], samples its self-play opponents.)
   - *Implemented Nov 24 (`pool.PoolSampler`).* Snapshots are loaded back from the checkpoint files (D8), so the pool is exactly the saved checkpoints, and they're frozen (eval mode, no gradients). They play with the learner's current ε. Two groups that draw the same snapshot get the same object, so their games share one forward pass. Each log row adds `pool_size` (snapshots available since the last eval point) and `opp_past_frac` (the fraction of groups that played a past snapshot, ≈ 1 − `pool_p_latest`). Tests cover the mix for p = 0, 0.5, 0.8 and 1, uniform draws, frozen weights, ε, and batching. Seven planted bugs were all caught, including "snapshot = the live network", which would silently turn the pool into naive play.
@@ -387,7 +394,7 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 | ID | What | Runs | When |
 |---|---|---|---|
 | E0 | 4×4 supervised sanity check: fit the net to exact solver values (separates RL bugs from capacity issues) | 1 | Nov 24, only if stuck |
-| E1 | 4×4 2×2 | 4 × 5 seeds = 20 (minutes each) | Launch Nov 25 |
+| E1 | 4×4 2×2 | 4 × 5 seeds = 20 (minutes each) | ~~Launch Nov 25~~ Done Nov 24: 20/20 runs in 26 min (results below) |
 | P | 6×6 pilots, 400k games (their curves set E2's budget) | 4 × 1 seed | Launch Nov 25 on the laptop GPU (~6–7 h sharing it with P8) |
 | E2 | 6×6 2×2 | 4 × 3 seeds = 12 | Launch Dec 1 on the laptop GPU, 4 at a time: ~8½ h at 200k games, ~16½ h at 400k |
 | E3 | Cross-play matrices | — | Dec 1 (4×4) / Dec 4 (6×6) |
@@ -396,6 +403,23 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 | P8 | *(Could)* 8×8 pilot: A-naive, 1M games (`make pilot-8x8`) | 1 | Launch Nov 25 alongside P (gate 1 passed Nov 24); ~1 day |
 | E6 | *(Could)* 8×8 A pair: A-naive vs A-pool on the frozen code (`make sweep-8x8`) | 2 × 1 seed | Launch Dec 1 (Dec 2 at the latest), only if gate 2 passed |
 | E7 | *(Could)* Settings comparison: rerun with the pre-Nov-24 settings (`eps_end` 0.05, `target_update_every` 1,000) on the same code, compared with E1 / P. 4×4: `make sweep-4x4-old` (all 4 conditions × 5 seeds, ~5 min per run on `mps`). 6×6: `make pilot-6x6-old` (1 seed per condition, GPU hours) | 20 (4×4) + 4 (6×6) | 4×4 any time after E1 launches; 6×6 only with spare compute, never ahead of E2 |
+
+*E1 results (Nov 24, `runs/e1-4x4/`).* Means ± sd over 5 seeds of the last 10 eval points (games 21k–30k), except the last row. Scores are from 240-game matches through the opening bank, greedy.
+
+| | A-naive | A-pool | N-naive | N-pool |
+|---|---|---|---|---|
+| Accuracy, all 7,912 positions | 75.8 ± 0.5% | 76.0 ± 0.6% | 78.5 ± 0.2% | 78.6 ± 0.6% |
+| Q corr with exact values | 0.432 ± 0.009 | 0.447 ± 0.005 | 0.474 ± 0.006 | 0.479 ± 0.008 |
+| Score vs random / greedy / positional | .736 / .714 / .588 | .727 / .720 / .598 | .731 / .729 / .590 | .732 / .727 / .603 |
+| Accuracy at games 8k–12k (the peak) | 77.1% | 76.2% | 80.8% | 80.9% |
+
+- **Target: N beats A.** +2.7 points of accuracy (10 runs per side, Welch p ≈ 4·10⁻¹⁰) and +0.04 Q corr. Every N seed beats every A seed. Scores vs the references barely differ, except vs greedy (+1 point, p ≈ 0.01).
+- **Sampling: no effect on 4×4 (H1 null here).** Pool vs naive: +0.2 points of accuracy (p = 0.78), +0.01 Q corr (p = 0.32). Pool is +1.1 points vs positional (p = 0.04), but that's one of five metrics tested, so not evidence on its own. This matches rung 4: pool widens coverage but doesn't buy accuracy on 4×4.
+- **Accuracy peaks mid-run, then declines (H2-relevant).** Accuracy peaks at 8k–12k games and is lower by 30k: −2.3 points in all 10 N runs, −1.3 in all 5 A-naive runs, and ~0 for A-pool (mixed signs, from a lower peak). The timing matches ε reaching its floor (6k games), with the 100k buffer (~8k games of data) flushing out the last high-ε transitions by ~14k. *That mechanism is a hypothesis, not tested.* A cheap test is N-naive with `replay_capacity` 400k (keeps all ~370k transitions), or with `eps_decay_frac` 1.0.
+  - Pool doesn't remove the drop under N. So on 4×4, "drawdown after peak" happens under both samplers.
+- **Implication for the pilots and E2.** The same shape may appear on 6×6: ε reaches its floor at 80k games, and the buffer holds ~40k games. So when setting E2's budget, read the pilot curves for a peak, not only a plateau. Also, `eps_decay_frac` and the replay rule scale with `games`. A 200k E2 run reaches ε's floor at 40k, not at the pilot's 80k, so the pilot curve at 200k only approximates a 200k run.
+- **Other logged differences.** Pool learners score 0.53–0.55 in training games, because they beat older snapshots. A-pool's loss is 0.032 vs A-naive's 0.024: more varied opponents make A's targets noisier. N's loss is 0.003.
+- **The runs' `meta.json` says `dirty: true`.** Only `docs/spec.md` was uncommitted at launch; the code is commit 091c38e.
 
 **Compute:** On Tue Nov 24, measure games/s and gradient steps/s on your laptop and server, then fix the 6×6 game budget so one run takes ≤ 6 h. ~~Run as many seeds in parallel on the server as it has cores for (`tmux`), and `rsync` `runs/` back.~~ *Revised Nov 24: the server is too small (below), so every 6×6/8×8 run goes on the laptop GPU, four at a time (`JOBS=4`; `DEVICE` defaults to `mps` on macOS). Keep the laptop plugged in and awake: run sweeps under `caffeinate -i`, inside `tmux` so closing the terminal doesn't kill them, with the lid open.* **Fallback:** if the 12 E2 runs can't finish by Thu Dec 3, run 3 seeds for the A pair and 2 seeds for the N pair (10 runs).
 
@@ -566,7 +590,7 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 
 **Wed Nov 25** (~4 h) — **M1**
 - [x] Opponent pool, checkpointing, YAML configs, run directories with commit hash. *(Done Nov 24, a day early: checkpointing, configs and run directories with `train.py`, then `pool.PoolSampler`. Ladder rung 4 passed, §4.6. E1 and the pilots are ready to launch.)*
-- [ ] Launch **E1** (4×4 2×2, 20 runs): `caffeinate -i make sweep-4x4` in `tmux`, four at a time on the laptop GPU, ~30 min.
+- [x] Launch **E1** (4×4 2×2, 20 runs): `caffeinate -i make sweep-4x4` in `tmux`, four at a time on the laptop GPU, ~30 min. *(Done Nov 24, a day early: 20/20 in 26 min. Results in §4.8: N > A clearly, pool ≈ naive, and accuracy peaks at ~10k games before declining.)*
 - [ ] Launch **6×6 pilots** (4 runs, 400k games) ~~on the server before leaving for the holiday~~ on the laptop GPU after E1: `caffeinate -i make pilot-6x6` (*Nov 24: the server is too slow, §4.8. The user is home for the holiday, and the laptop can run day and night*). ~6–7 h sharing the GPU with P8.
 - [ ] If gate 1 passed (it did, Nov 24): launch the **8×8 pilot** P8 (1M games) ~~on hardware the 6×6 pilots don't use~~ on the laptop GPU alongside the 6×6 pilots: `caffeinate -i make pilot-8x8` in a second `tmux` window (*Nov 24: there is no second GPU, and the pilots aren't E2, so sharing is fine*). ~1 day.
 - [ ] *(optional)* On the server: E7's 4×4 half. Do it after `git pull` of the code E1 ran, so both use the same code. Run `.venv/bin/python scripts/build_data.py solve4x4`, then `nice -n 10 make sweep-4x4-old JOBS=1` in `tmux`. That's one run at a time so the sites keep a core, roughly 1½ days (estimate; check with `scripts/throughput.py --config configs/4x4.yaml` first).
