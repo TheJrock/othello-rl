@@ -8,7 +8,7 @@ Module map (spec §4.1):
     replay     transitions, replay buffer, symmetry augmentation
     targets    Double-DQN targets; the `target` factor (env | negamax)
     selfplay   batched games and transition cutting; the `target` factor
-    pool       opponent sampling; the `sampling` factor (naive | pool)
+    pool       opponent sampling; the `sampling` factor (naive | pool; random = debug only)
     train      training loop (python -m othello_rl.train)
     evaluate   opening banks, matches, metrics, cross-play
     regret     MADRID-style checkpoint regret

@@ -146,15 +146,46 @@ def play_match(p1: Player, p2: Player, openings: Sequence[State], rng: np.random
     return MatchStats(wins=results.count(1), draws=results.count(0), losses=results.count(-1))
 
 
-def optimal_move_accuracy(player: Player, positions: Sequence[State], table: solver.Table) -> float:
-    """4×4: fraction of positions where the player's action is in solver.optimal_actions."""
-    raise NotImplementedError("evaluate.optimal_move_accuracy")
+def solver_values(table: solver.Table, positions: Sequence[State]) -> np.ndarray:
+    """(P, n*n + 1) matrix of solver.child_values: the exact value of every legal move, NaN for
+    illegal ones. Computed once per run (EvalContext) instead of at every eval point."""
+    return np.stack([solver.child_values(table, s) for s in positions])
 
 
-def q_solver_mse(player: NetPlayer, positions: Sequence[State], table: solver.Table) -> float:
-    """4×4: mean squared error between Q(s, a) and solver.child_values over legal actions. Logged for
+def optimal_move_accuracy(
+    player: Player, positions: Sequence[State], values: np.ndarray, rng: np.random.Generator
+) -> float:
+    """4×4: fraction of positions where the player's action achieves the position's value (is one
+    of solver.optimal_actions). `values` = solver_values(table, positions)."""
+    actions = np.asarray(player.act(positions, rng))
+    chosen = values[np.arange(len(positions)), actions]  # NaN (never optimal) if the move is illegal
+    return float(np.mean(chosen == np.nanmax(values, axis=1)))
+
+
+def _q_vs_solver(
+    player: NetPlayer, positions: Sequence[State], values: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Q(s, a) and the exact value, flattened over every legal (position, action) pair."""
+    legal = ~np.isnan(values)
+    return player.q_values(positions)[legal], values[legal]
+
+
+def q_solver_mse(player: NetPlayer, positions: Sequence[State], values: np.ndarray) -> float:
+    """4×4: mean squared error between Q(s, a) and the exact value over legal actions. Logged for
     every run, but only meaningful for negamax runs, whose Q targets the minimax value (spec §4.5)."""
-    raise NotImplementedError("evaluate.q_solver_mse")
+    q, v = _q_vs_solver(player, positions, values)
+    return float(np.mean((q - v) ** 2))
+
+
+def q_solver_corr(player: NetPlayer, positions: Sequence[State], values: np.ndarray) -> float:
+    """4×4: Pearson correlation between Q(s, a) and the exact value over legal actions (the "Q
+    correlates with solver values" check for negamax, spec §6). Unlike the MSE it ignores scale and
+    offset, so it shows whether Q ranks moves correctly even before its magnitudes are right.
+    NaN if Q is constant."""
+    q, v = _q_vs_solver(player, positions, values)
+    if q.std() == 0:
+        return float("nan")
+    return float(np.corrcoef(q, v)[0, 1])
 
 
 def endgame_accuracy(player: Player, records: Sequence[dict[str, Any]]) -> float:
@@ -170,16 +201,19 @@ class EvalContext:
     references: dict[str, Player]
     table: solver.Table | None = None
     positions_4x4: list[State] | None = None
+    values_4x4: np.ndarray | None = None  # solver_values(table, positions_4x4)
     endgame_set: list[dict[str, Any]] | None = None
 
     @classmethod
     def from_config(cls, cfg: Config) -> EvalContext:
         table = solver.load_table(cfg.solver_table) if cfg.solver_table else None
+        positions = solver.eval_positions_4x4(table) if table is not None else None
         return cls(
             openings=load_states(cfg.openings),
             references=reference_players(cfg.board),
             table=table,
-            positions_4x4=solver.eval_positions_4x4(table) if table is not None else None,
+            positions_4x4=positions,
+            values_4x4=solver_values(table, positions) if table is not None else None,
             endgame_set=load_endgame_set(cfg.endgame_set) if cfg.endgame_set else None,
         )
 
@@ -193,12 +227,32 @@ def evaluate_checkpoint(
 ) -> dict[str, Any]:
     """The evaluation fields of one log row (spec §4.6–4.7):
 
-    score_<ref>, ci_<ref>     for each reference player (random, greedy, positional)
-    score_selfplay            vs the previous checkpoint (spec D5); omitted when previous is None
-    accuracy_4x4, q_mse_4x4   when ctx.table is set
-    endgame_accuracy          when ctx.endgame_set is set
+    score_<ref>, ci_<ref>                 for each reference player (random, greedy, positional)
+    score_selfplay, ci_selfplay           vs the previous checkpoint (spec D5); omitted when previous is None
+    accuracy_4x4, q_mse_4x4, q_corr_4x4   when ctx.table is set
+    endgame_accuracy                      when ctx.endgame_set is set
+
+    Both networks play greedy (ε = 0) through the opening bank, each opening from both sides.
     """
-    raise NotImplementedError("evaluate.evaluate_checkpoint")
+    player = NetPlayer(net, epsilon=0.0, device=cfg.device, name="eval")
+    row: dict[str, Any] = {}
+
+    def match(name: str, opponent: Player) -> None:
+        stats = play_match(player, opponent, ctx.openings, rng)
+        row[f"score_{name}"] = stats.score
+        row[f"ci_{name}"] = list(stats.ci())
+
+    for name, ref in ctx.references.items():
+        match(name, ref)
+    if previous is not None:
+        match("selfplay", NetPlayer(previous, epsilon=0.0, device=cfg.device, name="previous"))
+    if ctx.values_4x4 is not None:
+        row["accuracy_4x4"] = optimal_move_accuracy(player, ctx.positions_4x4, ctx.values_4x4, rng)
+        row["q_mse_4x4"] = q_solver_mse(player, ctx.positions_4x4, ctx.values_4x4)
+        row["q_corr_4x4"] = q_solver_corr(player, ctx.positions_4x4, ctx.values_4x4)
+    if ctx.endgame_set is not None:
+        row["endgame_accuracy"] = endgame_accuracy(player, ctx.endgame_set)
+    return row
 
 
 def crossplay_matrix(

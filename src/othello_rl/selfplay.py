@@ -142,15 +142,24 @@ def cut_transitions(traj: Trajectory, black: bool, mode: str) -> list[Transition
 
 
 def collect(
-    learner: NetPlayer, opponents: Sequence[Player], n_games: int, cfg: Config, rng: np.random.Generator
+    learner: NetPlayer,
+    opponents: Sequence[Player],
+    n_games: int,
+    cfg: Config,
+    rng: np.random.Generator,
+    learner_only: bool = False,
 ) -> tuple[list[Transition], dict[str, float]]:
     """One round of training games from engine.initial(cfg.board).
 
     Split the n_games games evenly into len(opponents) groups; group g plays opponents[g], with the
-    learner as Black in half of each group's games. Cut every trajectory with cfg.target from BOTH
-    sides (spec D2): the opponent's moves are training data too, whoever the opponent is. Return all
-    transitions plus round stats for the log: plies_per_game, transitions_per_game, and
-    learner_score (the learner's score in these games, draws counting half).
+    learner as Black in half of each group's games (one extra Black game when a group is odd). Cut
+    every trajectory with cfg.target from BOTH sides (spec D2): the opponent's moves are training
+    data too, whoever the opponent is. Return all transitions plus round stats for the log:
+    plies_per_game, transitions_per_game, and learner_score (the learner's score in these games,
+    draws counting half).
+
+    learner_only=True cuts only the learner's side. Only the debugging ladder's rung 1 uses it
+    (pool.FixedSampler.store_opponent_moves); every experiment condition stores both sides.
 
     Under naive sampling the opponent is the learner object itself, so play_games batches both
     sides into one forward pass per ply."""
@@ -168,7 +177,13 @@ def collect(
             white.append(opponent if lb else learner)
             learner_black.append(lb)
     trajs = play_games(black, white, [initial(cfg.board)] * n_games, rng)
-    transitions = [tr for t in trajs for side in (True, False) for tr in cut_transitions(t, side, cfg.target)]
+    sides = [(lb,) if learner_only else (True, False) for lb in learner_black]
+    transitions = [
+        tr
+        for t, s in zip(trajs, sides)
+        for black_side in s
+        for tr in cut_transitions(t, black_side, cfg.target)
+    ]
     stats = {
         "plies_per_game": float(np.mean([len(t.plies) for t in trajs])),
         "transitions_per_game": len(transitions) / n_games,

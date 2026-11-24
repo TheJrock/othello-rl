@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from othello_rl import rundir
-from othello_rl.config import Config, load_config, parse_cli
+from othello_rl.config import SAMPLINGS, Config, load_config, parse_cli
 
 CONFIGS = Path(__file__).resolve().parents[1] / "configs"
 
@@ -74,6 +74,8 @@ def test_yaml_scientific_notation_is_coerced(tmp_path):
         {"board": 5},
         {"pool_p_latest": 1.5},
         {"parallel_games": 100, "pool_groups": 8},
+        {"eval_every": 1_004, "pool_groups": 8},  # a cut-short round must still split into groups
+        {"games": 30_004, "pool_groups": 8},
         {"eps_start": 0.01, "eps_end": 0.05},
     ],
 )
@@ -112,3 +114,10 @@ def test_run_dir_lifecycle(tmp_path):
     rundir.prepare_run_dir(cfg, overwrite=True)
     assert not (run / rundir.LOG_FILE).exists()
     assert rundir.list_checkpoints(run) == []
+
+
+def test_debug_sampling_is_accepted_but_never_swept():
+    """sampling=random is debugging ladder rung 1 only (spec §4.6): valid for a single run, but not
+    one of the 2×2 values that scripts/sweep.py iterates over."""
+    assert Config(sampling="random").sampling == "random"
+    assert SAMPLINGS == ("naive", "pool")

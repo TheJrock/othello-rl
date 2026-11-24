@@ -25,9 +25,12 @@ from typing import Any
 import yaml
 
 TARGETS = ("env", "negamax")
-SAMPLINGS = ("naive", "pool")
+SAMPLINGS = ("naive", "pool")  # the 2×2 factor; scripts/sweep.py iterates over these only
+# Debugging ladder only (spec §4.6), never part of an experiment: rung 1 trains against a fixed
+# uniformly random opponent and stores only the learner's moves, a stationary single-agent MDP.
+DEBUG_SAMPLINGS = ("random",)
 BOARDS = (4, 6, 8)
-CHOICES: dict[str, tuple] = {"target": TARGETS, "sampling": SAMPLINGS, "board": BOARDS}
+CHOICES: dict[str, tuple] = {"target": TARGETS, "sampling": SAMPLINGS + DEBUG_SAMPLINGS, "board": BOARDS}
 
 
 @dataclass
@@ -36,7 +39,7 @@ class Config:
     exp: str = "dev"
     board: int = 4
     target: str = "env"  # env (opponent-as-environment) | negamax
-    sampling: str = "naive"  # naive (latest vs latest) | pool (past checkpoints)
+    sampling: str = "naive"  # naive (latest vs latest) | pool (past checkpoints) | random (debug only)
     seed: int = 0
 
     # --- network (spec §4.5)
@@ -104,10 +107,13 @@ class Config:
             raise ValueError(f"eps_decay_frac must be in (0, 1], got {self.eps_decay_frac}")
         if not 0.0 <= self.eps_end <= self.eps_start <= 1.0:
             raise ValueError("need 0 <= eps_end <= eps_start <= 1")
-        if self.parallel_games % self.pool_groups:
-            raise ValueError(
-                f"parallel_games ({self.parallel_games}) must be divisible by pool_groups ({self.pool_groups})"
-            )
+        # Rounds are cut short so eval points land exactly on multiples of eval_every (and on
+        # `games`), so every round size must still split evenly into the opponent groups.
+        for name in ("parallel_games", "eval_every", "games"):
+            if getattr(self, name) % self.pool_groups:
+                raise ValueError(
+                    f"{name} ({getattr(self, name)}) must be divisible by pool_groups ({self.pool_groups})"
+                )
 
     @property
     def run_dir(self) -> Path:

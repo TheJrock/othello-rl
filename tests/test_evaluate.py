@@ -1,20 +1,29 @@
-"""Eval harness: Wilson intervals, opening banks, matches (spec §4.7, D4)."""
+"""Eval harness: Wilson intervals, opening banks, matches, 4×4 solver metrics (spec §4.7, D4)."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
+import torch
 
 from othello_rl import engine as E
+from othello_rl import solver
 from othello_rl.evaluate import (
+    EvalContext,
     MatchStats,
+    evaluate_checkpoint,
     load_states,
     opening_bank,
+    optimal_move_accuracy,
     play_match,
+    q_solver_corr,
+    q_solver_mse,
     reference_players,
     save_states,
+    solver_values,
     wilson_interval,
 )
+from othello_rl.players import NetPlayer, RandomPlayer
 
 
 class Lowest:
@@ -143,3 +152,96 @@ def test_reference_strengths_on_6x6_bank(rng):
     assert play_match(refs["positional"], refs["random"], openings, rng).score > 0.75
     assert play_match(refs["greedy"], refs["random"], openings, rng).score > 0.5
     assert play_match(refs["positional"], refs["greedy"], openings, rng).score > 0.5
+
+
+# --- 4×4 solver metrics -------------------------------------------------------------------------
+
+
+class SolverQNet(torch.nn.Module):
+    """A perfect Q for 4×4: decodes the input planes back into a position and returns the solver's
+    exact value for every legal move (−1 for illegal ones, which play is masked from anyway)."""
+
+    def __init__(self, table, scale=1.0, offset=0.0):
+        super().__init__()
+        self.table, self.scale, self.offset = table, scale, offset
+
+    def forward(self, x):
+        rows = []
+        for planes in x.cpu().numpy().round().astype(np.uint8):
+            me, opp = (int(np.packbits(p.ravel(), bitorder="little")[:2].view("<u2")[0]) for p in planes[:2])
+            rows.append(np.nan_to_num(solver.child_values(self.table, E.State(me, opp, 4)), nan=-1.0))
+        return torch.tensor(np.stack(rows) * self.scale + self.offset, dtype=torch.float32)
+
+
+@pytest.fixture(scope="module")
+def positions(table):
+    return solver.eval_positions_4x4(table)[::10]  # every 10th: ~790 positions, enough and quick
+
+
+@pytest.fixture(scope="module")
+def values(table, positions):
+    return solver_values(table, positions)
+
+
+def test_solver_qnet_decodes_planes(table, positions):
+    """The test double itself: Q from the planes equals child_values of the original position."""
+    q = NetPlayer(SolverQNet(table)).q_values(positions[:20])
+    for s, row in zip(positions[:20], q):
+        legal = E.legal_mask(s)
+        np.testing.assert_array_equal(row[legal], solver.child_values(table, s)[legal])
+
+
+def test_perfect_q_scores_perfectly(table, positions, values, rng):
+    player = NetPlayer(SolverQNet(table))
+    assert optimal_move_accuracy(player, positions, values, rng) == 1.0
+    assert q_solver_mse(player, positions, values) == 0.0
+    assert q_solver_corr(player, positions, values) == pytest.approx(1.0)
+
+
+def test_corr_ignores_scale_and_offset_but_mse_does_not(table, positions, values, rng):
+    """A Q that ranks every move correctly but is shrunk toward 0.2 still plays perfectly: the
+    correlation stays 1 while the MSE shows the magnitudes are off."""
+    player = NetPlayer(SolverQNet(table, scale=0.3, offset=0.2))
+    assert optimal_move_accuracy(player, positions, values, rng) == 1.0
+    assert q_solver_corr(player, positions, values) == pytest.approx(1.0)
+    assert q_solver_mse(player, positions, values) > 0.1
+
+
+def test_random_accuracy_matches_chance(table, positions, values, rng):
+    chance = solver.chance_accuracy(table, positions)
+    acc = np.mean([optimal_move_accuracy(RandomPlayer(), positions, values, rng) for _ in range(20)])
+    assert acc == pytest.approx(chance, abs=0.02)
+
+
+def test_illegal_moves_are_never_optimal(positions, values, rng):
+    class PlaysPass:
+        name = "pass"
+
+        def act(self, states, rng):
+            return [16] * len(states)  # pass is illegal in every eval position (≥ 2 legal moves)
+
+    assert optimal_move_accuracy(PlaysPass(), positions, values, rng) == 0.0
+
+
+def test_evaluate_checkpoint_fields(table, positions, values, rng):
+    from othello_rl.config import Config
+    from othello_rl.nets import build_net
+
+    cfg = Config(board=4, channels=8, layers=1)
+    ctx = EvalContext(
+        openings=opening_bank(4, 4, None, 0)[:5],
+        references=reference_players(4),
+        table=table,
+        positions_4x4=positions,
+        values_4x4=values,
+    )
+    net = build_net(cfg)
+    first = evaluate_checkpoint(net, None, cfg, ctx, rng)
+    assert "score_selfplay" not in first  # no previous checkpoint at game 0
+    row = evaluate_checkpoint(net, net, cfg, ctx, rng)
+    for name in ("random", "greedy", "positional", "selfplay"):
+        assert 0.0 <= row[f"score_{name}"] <= 1.0
+        lo, hi = row[f"ci_{name}"]
+        assert lo <= row[f"score_{name}"] <= hi
+    assert row["score_selfplay"] == 0.5  # a greedy net against itself, each opening from both sides
+    assert {"accuracy_4x4", "q_mse_4x4", "q_corr_4x4"} <= row.keys()

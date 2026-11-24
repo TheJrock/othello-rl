@@ -25,3 +25,11 @@ def pytest_runtest_makereport(item, call):
 @pytest.fixture
 def rng() -> np.random.Generator:
     return np.random.default_rng(0)
+
+
+@pytest.fixture(scope="session")
+def table():
+    """The full 4×4 solve (≈ 0.5 s), shared by every test module."""
+    from othello_rl import solver
+
+    return solver.solve_4x4()

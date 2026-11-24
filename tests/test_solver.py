@@ -14,11 +14,6 @@ from othello_rl.selfplay import play_games
 
 
 @pytest.fixture(scope="module")
-def table():
-    return S.solve_4x4()
-
-
-@pytest.fixture(scope="module")
 def eval_positions(table):
     return S.eval_positions_4x4(table)
 
@@ -163,3 +158,44 @@ def test_perfect_player_passes_and_breaks_ties(table, rng):
     tied = next(s for s in sample_states(table, 5000, rng) if S.optimal_actions(table, s).sum() >= 2)
     chosen = set(p.act([tied] * 200, rng))
     assert chosen == set(np.flatnonzero(S.optimal_actions(table, tied)).tolist())
+
+
+# --- 4×4 vs a uniformly random opponent (debugging ladder rung 1) -------------------------------
+
+
+@pytest.fixture(scope="module")
+def vs_random():
+    return S.solve_vs_random_4x4()
+
+
+@pytest.fixture(scope="module")
+def bank():
+    return opening_bank(4, 4, None, 0)  # the data/openings_4x4.json bank: all 120 positions
+
+
+def every_legal(s, values):
+    return ~np.isnan(values)
+
+
+def test_random_vs_random_scores_exactly_half(bank):
+    """Each opening from both sides, both players random: the two games mirror each other."""
+    assert S.exact_score_vs_random(every_legal, bank) == pytest.approx(0.5)
+
+
+def test_expectimax_values_are_consistent(vs_random, eval_positions):
+    for s in eval_positions[::50]:
+        q = vs_random.child_values(s)
+        assert np.nanmax(q) == pytest.approx(vs_random.mover[(s.me, s.opp)])
+
+
+def test_ceilings_against_random(table, vs_random, bank):
+    """The numbers quoted in spec §4.6. From the start, best play beats random 95.9% as Black and
+    always as White; on the bank the ceiling is 83.4%, and even π* only gets 77.8%, which is why a
+    "≥ 95% vs random" bar can't apply to 4×4 bank matches."""
+    start = E.initial(4)
+    assert (vs_random.mover[(start.me, start.opp)] + 1) / 2 == pytest.approx(0.959, abs=5e-4)
+    assert vs_random.random[(start.me, start.opp)] == 1.0
+    best = S.exact_score_vs_random(lambda s, v: v == np.nanmax(v), bank)
+    perfect = S.exact_score_vs_random(lambda s, v: S.optimal_actions(table, s), bank)
+    assert best == pytest.approx(0.834, abs=5e-4)
+    assert perfect == pytest.approx(0.778, abs=5e-4)

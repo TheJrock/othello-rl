@@ -9,7 +9,7 @@ SERVER ?=
 SERVER_DIR ?= othello-rl
 RUN ?=
 
-.PHONY: help setup test test-py test-web data sweep-4x4 pilot-6x6 sweep-6x6 pilot-8x8 sweep-8x8 sync figures report demo web-dev
+.PHONY: help setup test test-py test-web data ladder sweep-4x4 pilot-6x6 sweep-6x6 pilot-8x8 sweep-8x8 sync figures report demo web-dev
 
 help:  ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-11s %s\n", $$1, $$2}'
@@ -34,6 +34,12 @@ data:  ## build the fixed benchmarks in data/ (refuses to overwrite existing fil
 	$(PY) scripts/build_data.py openings --board 8
 	$(PY) scripts/build_data.py endgame6
 	$(PY) scripts/build_data.py regret-positions
+
+ladder:  ## debugging ladder rungs 1-3 on 4x4 + exact checks (spec §4.6). DEVICE=mps: ~10 min
+	$(PY) -m othello_rl.train --config configs/4x4.yaml --exp ladder --target env --sampling random --device $(DEVICE) --overwrite
+	$(PY) -m othello_rl.train --config configs/4x4.yaml --exp ladder --target env --sampling naive --device $(DEVICE) --overwrite
+	$(PY) -m othello_rl.train --config configs/4x4.yaml --exp ladder --target negamax --sampling naive --device $(DEVICE) --overwrite
+	$(PY) scripts/ladder_check.py runs/ladder/env-random/seed0 runs/ladder/env-naive/seed0 runs/ladder/negamax-naive/seed0
 
 sweep-4x4:  ## E1: 4x4, 2x2 conditions x 5 seeds   (JOBS=8 to run 8 at once)
 	$(PY) scripts/sweep.py --config configs/4x4.yaml --exp e1-4x4 --seeds 0 1 2 3 4 --jobs $(JOBS) -- --device $(DEVICE)

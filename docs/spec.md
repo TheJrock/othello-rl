@@ -1,6 +1,6 @@
 # Othello Self-Play — Project Spec & Timeline
 
-Companion to `docs/proposal.md` · Written Wed Nov 18, 2026 · Rev. 4 (2×2 design, MADRID-style checkpoint regret, repo scaffold; Nov 19: gated 8×8 add-on, D9 and §4.8; Nov 23: deeper opening banks, §4.7; a demo pass rule, §5.1; both sides' transitions stored, D2)
+Companion to `docs/proposal.md` · Written Wed Nov 18, 2026 · Rev. 4 (2×2 design, MADRID-style checkpoint regret, repo scaffold; Nov 19: gated 8×8 add-on, D9 and §4.8; Nov 23: deeper opening banks, §4.7; a demo pass rule, §5.1; both sides' transitions stored, D2; Nov 24: debugging ladder results and 4×4 vs-random bars, §4.6)
 
 | Date | Milestone |
 |---|---|
@@ -273,7 +273,7 @@ Replay tuple: `(planes_s, a, r, planes_s', legal_mask_s', done)`. At sample time
 | Loss / clipping | Huber, grad-norm clip 10 | same | same |
 | Eval + checkpoint every | 1k games (30 points) | 5k games (~40 points) | 10k games (~50 points) |
 | Seeds | 5 | 3 | 1 per arm |
-| Device | CPU | GPU (CPU-only exceeds 6 h/run, §4.8) | GPU only (`--device mps` or `cuda`) |
+| Device | GPU (`mps`) where available: ~2–5 min/run; a CPU gradient step is ~50 ms even here (§4.8) | GPU (CPU-only exceeds 6 h/run, §4.8) | GPU only (`--device mps` or `cuda`) |
 
 Replay capacities were doubled on Nov 23, when D2 began storing both sides' moves. That keeps each buffer at ≈ 10% of training's transitions.
 
@@ -286,12 +286,41 @@ Replay capacities were doubled on Nov 23, when D2 began storing both sides' move
 - **Naive:** opponent = the current online network.
 - **Pool:** add a frozen copy every checkpoint interval (keep all). Each round, split the B games into 8 groups. Each group's opponent is the latest network with p = 0.5, otherwise one drawn uniformly from past snapshots. (MADRID uses checkpoints only *after* training, so it doesn't prescribe a training-time sampling rule. This 50/50 mix is a common default; if you want a cited rule, check how the TiZero paper, its ref. [29], samples its self-play opponents.)
 - Log one JSONL line per eval point: games, grad steps, wall time, ε, mean loss, mean max-Q, score vs each reference opponent (+ Wilson CI), self-play score (D5), 4×4 accuracy (+ Q-vs-solver MSE for N), 6×6 endgame accuracy.
+  - *Implemented Nov 24* (`train.train`, `evaluate.evaluate_checkpoint`). Each row also has `buffer` (replay size), `grad_norm` (before clipping), `plies_per_game`, `transitions_per_game`, `learner_score` (training games), `mean_target`, and `q_corr_4x4`, the Pearson correlation of Q with the exact values. Unlike the MSE, it ignores scale, so it shows whether Q ranks moves correctly before its magnitudes are right. Training stats are means since the previous eval point. `epsilon` is the ε the learner actually used. Eval points land exactly on multiples of `eval_every` (the round before one is cut short), so `games`, `eval_every` and `parallel_games` must all divide by `pool_groups`.
 
 **Debugging ladder.** Get each rung working before the next. Rung 1 is also a useful "stationary MDP" reference point for the talk.
-1. A vs a **fixed random opponent**: plain single-agent DQN on a stationary MDP. It should beat random ≥ 95% quickly.
+1. A vs a **fixed random opponent**: plain single-agent DQN on a stationary MDP. It should beat random ≥ 95% quickly *from the start position* (see the bars below).
 2. A-naive self-play.
 3. N-naive self-play (check Q against solver values).
 4. Pool sampling for both.
+
+*Rung 1 setup (Nov 24).* `--sampling random` is a debug-only value (`config.DEBUG_SAMPLINGS`), never swept. Only the learner's moves are stored (`pool.FixedSampler.store_opponent_moves = False`). The fixed opponent's moves would be transitions whose environment is the learner, which keeps changing, so the MDP would no longer be stationary. The one network would also be fitting values against two different opponents. Rung 1 is A only: N needs both sides' moves, since its bootstrap states are the opponent's positions.
+
+*Bars for 4×4, from an exact solve against random (Nov 24, `solver.solve_vs_random_4x4`, tests in `tests/test_solver.py`).* Against a random opponent the best policy is expectimax, not π\*. Exact expected scores, each start played from both sides:
+
+| Player vs random | 4×4 bank | Start position |
+|---|---|---|
+| Random | 50.0% | 50.0% |
+| π\* (minimax-perfect) | 77.8% | 88.1% |
+| Best possible (expectimax) | **83.4%** | **98.0%** |
+
+So "≥ 95% vs random" can only apply from the start position. On the 4×4 bank even the best possible player scores 83.4%: four random plies leave about four decisions per side, and many openings are lost however you play. The Tue Nov 24 bar "≥ 90% vs random" fails for π\* itself in both columns, so for rungs 2–3 it becomes "close to π\*". On 6×6 and 8×8 the ≥ 95% intuition is fine; random is far weaker there (§4.3).
+
+*Results (Nov 24, 4×4, seed 0, 30k games, `mps`).* Logs are in `runs/ladder/`; `scripts/ladder_check.py` recomputes the exact columns from the final checkpoints. "Self-play positions" are the ~200 distinct positions with ≥ 2 legal moves that the final net reaches playing itself (ε = 0.05) from the start, i.e. where its training data comes from.
+
+| | Rung 1: A vs random | Rung 2: A-naive | Rung 3: N-naive |
+|---|---|---|---|
+| Exact score vs random: start / bank | 96.7% / 74.2% | 95.2% / 71.8% | 91.8% / 70.3% |
+| Minimax accuracy: self-play positions / all 7,912 (chance 49.4%) | 92.0% / 72.9% | **99.0%** / 72.6% | **97.9%** / 74.8% |
+| Q corr with minimax values: self-play positions / all | 0.67 / 0.38 | **0.87** / 0.40 | **0.82** / 0.41 |
+| Final TD loss | 0.022 | 0.015 | 0.003 |
+| Wall time (rungs 2–3 ran at the same time) | 2¼ min | 5½ min | 5½ min |
+
+- **Rung 1 passes.** From the start it scores 96.7% (best possible 98.0%). On the positions it reaches against random, it picks a best-vs-random move 94% of the time, and its Q matches the exact values of its MDP (corr 0.80).
+- **Rungs 2–3 pass on the machinery.** Where their data comes from, both nets play the minimax move ~98–99% of the time, and Q correlates 0.82–0.87 with the exact values. The negamax target is right, and the D2 cutting is too.
+- **The whole-set numbers are a coverage finding, not a bug.** Naive self-play at ε = 0.05 keeps replaying a few lines from the start: ~200 distinct decision positions out of 7,912. Off those lines Q is barely informative (corr ~0.4, MSE ~0.96, about what Q = 0 would score). So 4×4 accuracy plateaus around 73–75% by ~10k games. That's above chance, but far from the ~98% the nets reach on their own lines. This is H1–H2's narrow-distribution story in miniature. Pool sampling (rung 4) should widen coverage if anything does.
+- **Value propagation is slow.** Mean Q in rung 1 rose from 0.25 at 11k games to 0.79 at 26k. With γ = 1, a value moves back one decision per target-net update, and a 4×4 run gets only ~11–23 updates (`target_update_every: 1000`). That's a shared knob, open for the user to decide before E1 (§11).
+- A's loss is ~5× N's because A's targets include the opponent's ε-greedy reply, which is noise to the learner. N's target depends only on the position.
 
 ### 4.7 Evaluation protocol (`evaluate.py`, `regret.py`)
 
@@ -339,6 +368,9 @@ Measured Nov 19 on the laptop (M1 Pro): one Double-DQN gradient step at batch 25
 |---|---|---|---|---|
 | 6×6, L = 4 | 104 ms | 7.6 ms | ≈ 2 | 200k games: ~11.6 h CPU / ~50 min GPU |
 | 8×8, L = 5 | 198 ms | 11.2 ms | ≈ 3.8 | 500k games: ~104 h CPU / ~6 h GPU |
+| 4×4, L = 3 *(Nov 24)* | 50 ms (1 thread; 2–8 threads are slower) | 3.8 ms | ≈ 0.75 (measured) | 30k games: ~19 min CPU / ~1.5 min GPU |
+
+The 4×4 row is from the debugging ladder: a whole 30k-game run took 5½ min on `mps` with two runs sharing the GPU, and 2¼ min for rung 1, which stores only the learner's moves (≈ 0.38 steps per game).
 
 Self-play, inference, and evaluation come on top. **On CPU only, gradient steps alone take ~11.6 h per 6×6 run, about twice the 6 h limit, so 6×6 needs a GPU.** If one isn't available for all 12 runs, set `transitions_per_grad_step: 32` for every condition. That restores ≈ 1 step per game, with each transition sampled ≈ 8× instead of 16×. Decide this at the Nov 24 throughput measurement, before E1. Runs that share cores with `--torch-threads 1` are slower still. Train on a GPU wherever one is available: the laptop's (`DEVICE=mps`) is 14–18× faster than its CPU on this network.
 
@@ -467,8 +499,8 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 - [x] Target unit tests for both modes (§4.5). *(done Nov 23; exact-value checks, §4.5)*
 
 **Tue Nov 24** (~4–5 h)
-- [ ] Debugging ladder rungs 1–3 on 4×4 (§4.6), with JSONL logging.
-- [ ] N must show Q correlating with solver values. Both must show accuracy clearly above chance and ≥ 90% vs random. Run E0 if stuck.
+- [x] Debugging ladder rungs 1–3 on 4×4 (§4.6), with JSONL logging. *(done Nov 24; results in §4.6)*
+- [x] N must show Q correlating with solver values. Both must show accuracy clearly above chance and ≥ 90% vs random. Run E0 if stuck. *(Nov 24: passed on the positions the nets actually play, 98–99% accuracy and Q corr 0.82–0.87. Whole-set accuracy is 73–75% vs 49.4% chance. "≥ 90% vs random" was revised: π\* itself scores 77.8% on the 4×4 bank and 88.1% from the start, §4.6. E0 not needed: the nets fit what they visit, and the shortfall is coverage.)*
 - [ ] Measure throughput on laptop (CPU and `mps`) and server, for 6×6 and 8×8; fix the 6×6 budget and whether 12 runs fit (§4.8 fallback).
 - [ ] **8×8 gate 1** (§4.8): set the 8×8 game budget, or drop 8×8.
 
@@ -546,7 +578,7 @@ No new experiments in report week. Extra seeds may run in the background if they
 
 | Risk | Early signal | Response |
 |---|---|---|
-| Sign/pass bug in N targets | 4×4 Q doesn't correlate with solver values | Target unit tests; debugging ladder; E0. If N still isn't right by Nov 25, launch the A runs anyway and finish N on Nov 30 (it's the contrast arm) |
+| Sign/pass bug in N targets | 4×4 Q doesn't correlate with solver values | Target unit tests; debugging ladder; E0. If N still isn't right by Nov 25, launch the A runs anyway and finish N on Nov 30 (it's the contrast arm). *Ruled out Nov 24: rung 3 plays the minimax move on 98% of its own positions, Q corr 0.82 (§4.6)* |
 | DQN instability | Loss spikes, Q saturates at ±1 | Lower lr, more frequent target updates, confirm grad clipping; never per condition |
 | 6×6 too slow / 12 runs don't fit | Measured budget > 6 h/run or too few server cores (on CPU, gradient steps alone are ~11.6 h with both sides stored; §4.8) | Train on a GPU (`DEVICE=cuda`, or `mps` on the laptop), shrink the net to 32 channels, cut the game budget, use the §4.8 seed fallback |
 | 8×8 too slow or not learning | Gate 1: > 24 h/run on spare hardware. Gate 2: P8 < 50% vs positional | Drop 8×8 to future work. Never delay E2, change code after M2, or borrow from Dec 7–9 for it |
@@ -591,3 +623,4 @@ Abstract · 1 Introduction and question · 2 Background and related work (self-p
 - [ ] Server specs: CPU cores, GPU? These decide whether all 12 E2 runs fit and whether 8×8 can run beside them (Nov 24). A GPU matters for 6×6 too: on CPU, gradient steps alone take ~11.6 h per 6×6 run with both sides stored, about twice the 6 h/run limit (§4.8). Without enough GPU, use the `transitions_per_grad_step: 32` fallback.
 - [x] Demo URL: `othello.johnnygoodlad.dev` (portfolio is a project site with a custom domain; §5.5).
 - [x] Opponent transitions: the instructor asked for the opponent's moves to be included in training. D2 was revised on Nov 23 to store both sides' moves in all four conditions. `pool_p_latest` stays at 0.5, and the resulting A-pool dilution (~25% past-snapshot environment) goes in the report (D2).
+- [ ] Shared knobs before E1 (decide by Wed Nov 25; the same for all four conditions). The ladder (§4.6) found two things. (a) Naive self-play at ε = 0.05 covers only ~200 of 7,912 positions, so 4×4 accuracy plateaus at ~75%. (b) Value propagation is slow, with only ~11–23 target updates per 4×4 run. Options: keep the §4.5 settings, so coverage is part of the result, or change `eps_end` (e.g. 0.1) and/or `target_update_every` (e.g. 250), checked with one quick ladder rerun first.

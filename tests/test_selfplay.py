@@ -166,13 +166,6 @@ def test_play_games_checks_lengths(rng):
 # cut_transitions or td_targets breaks the equality somewhere in a few hundred random games.
 
 
-@pytest.fixture(scope="module")
-def table():
-    from othello_rl import solver
-
-    return solver.solve_4x4()
-
-
 def state_from_planes(planes: np.ndarray) -> E.State:
     bits = 1 << np.arange(N * N, dtype=object)
     return E.State(int(bits[planes[0].ravel() > 0].sum()), int(bits[planes[1].ravel() > 0].sum()), N)
@@ -311,3 +304,14 @@ def test_collect_rejects_uneven_groups(rng):
     p = RandomPlayer()
     with pytest.raises(ValueError):
         collect(p, [p] * 4, 10, round_config("env"), rng)
+
+
+def test_collect_learner_only_stores_just_the_learners_moves(rng):
+    """Debugging ladder rung 1 (pool.FixedSampler): the fixed opponent's moves are not data."""
+    from othello_rl.selfplay import collect
+
+    learner = Recorder(RandomPlayer(), "learner")
+    opponent = Recorder(RandomPlayer(), "opp")
+    trs, _ = collect(learner, [opponent] * 4, 16, round_config("env"), rng, learner_only=True)
+    assert len(trs) == sum(len(b) for b in learner.batches)  # every real learner move, nothing else
+    assert sum(tr.done for tr in trs) == 16  # one per game: the learner's last move
