@@ -8,9 +8,9 @@ channels: 64
 layers: 5
 
 # self-play and replay
-games: 500000            # placeholder: set from measured throughput on Nov 24 so one run takes <= 24 h (gate 1, spec §4.8)
+games: 1000000           # gate 1 (Nov 24): ~18 h alone on the laptop GPU. E6's budget is set at gate 2 from P8's curve (spec §4.8)
 parallel_games: 256
-replay_capacity: 3000000 # ~ last 10% of training's transitions, both sides (spec D1, D2), as on 6×6; rescale if `games` changes
+replay_capacity: 6000000 # ~10% of training's transitions (1M games × 60, both sides, spec D1, D2); ~2.8 GB; rescale if `games` changes
 augment: true
 
 # optimisation
@@ -30,7 +30,7 @@ pool_groups: 8
 pool_p_latest: 0.5
 
 # evaluation and checkpoints
-eval_every: 10000
+eval_every: 20000        # 51 eval points / pool snapshots; keep ~50 if `games` changes
 openings: data/openings_8x8.json
 solver_table: null
 endgame_set: null

@@ -1,11 +1,11 @@
 # Othello Self-Play — Project Spec & Timeline
 
-Companion to `docs/proposal.md` · Written Wed Nov 18, 2026 · Rev. 4 (2×2 design, MADRID-style checkpoint regret, repo scaffold; Nov 19: gated 8×8 add-on, D9 and §4.8; Nov 23: deeper opening banks, §4.7; a demo pass rule, §5.1; both sides' transitions stored, D2; Nov 24: debugging ladder results and 4×4 vs-random bars, §4.6; `eps_end` 0.1 and `target_update_every` 250 on all boards, §4.5, with E7 to compare)
+Companion to `docs/proposal.md` · Written Wed Nov 18, 2026 · Rev. 4 (2×2 design, MADRID-style checkpoint regret, repo scaffold; Nov 19: gated 8×8 add-on, D9 and §4.8; Nov 23: deeper opening banks, §4.7; a demo pass rule, §5.1; both sides' transitions stored, D2; Nov 24: debugging ladder results and 4×4 vs-random bars, §4.6; `eps_end` 0.1 and `target_update_every` 250 on all boards, §4.5, with E7 to compare; throughput on laptop and server, pilot budgets and gate 1, §4.8 and §6)
 
 | Date | Milestone |
 |---|---|
 | Tue Nov 24 | 8×8 gate 1: throughput (§4.8) |
-| **Wed Nov 25** | **M1** — 4×4 DQN learning under both target types and checked against the exact solver; 4×4 sweep and 6×6 pilot runs launched to run over Thanksgiving (plus the 8×8 pilot if gate 1 passed) |
+| **Wed Nov 25** | **M1** — 4×4 DQN learning under both target types and checked against the exact solver; 4×4 sweep and 6×6 pilot runs launched to run over Thanksgiving, plus the 8×8 pilot (gate 1 passed Nov 24), all on the laptop GPU |
 | Thu Nov 26 – Sat Nov 28 | Thanksgiving: light days, no new code on the critical path |
 | Mon Nov 30 | 8×8 gate 2: pilot review (§4.8) |
 | **Tue Dec 1** | **M2** — Experiment code frozen; final 6×6 runs launched (plus the 8×8 pair if gate 2 passed) |
@@ -263,19 +263,21 @@ Replay tuple: `(planes_s, a, r, planes_s', legal_mask_s', done)`. At sample time
 
 | | 4×4 | 6×6 | 8×8 (gated, D9) |
 |---|---|---|---|
-| Training games | 30k | ~200k (set from measured throughput, ≤ 6 h/run) | ~500k placeholder (set at gate 1, ≤ 24 h/run) |
+| Training games | 30k | 400k for the pilots (Nov 24). E2: 200k–400k, set Nov 30 from the pilot curves | 1M for P8 (gate 1, Nov 24). E6: ≤ 1M, set at gate 2 from P8's curve |
 | Parallel games | 128 | 256 | 256 |
-| Replay capacity | 100k transitions (~13 MB) | 600k transitions (~160 MB) | 3M transitions (≈ last 10% of training, as on 6×6; ~1.4 GB) |
+| Replay capacity | 100k transitions (~13 MB) | 1.28M transitions (≈ last 10% of training; ~340 MB) | 6M transitions (≈ last 10% of training; ~2.8 GB) |
 | Batch / optimizer | 256 / Adam 3e-4 | same | same |
 | Gradient steps | 1 per 16 new transitions, both sides (each sampled ≈ 16×) | same | same |
 | Target net | Hard update every 250 gradient steps (1,000 before Nov 24) | same | same |
 | Exploration | ε linear 1.0 → 0.1 over first 20% of games, then 0.1 (0.05 before Nov 24) | same | same |
 | Loss / clipping | Huber, grad-norm clip 10 | same | same |
-| Eval + checkpoint every | 1k games (30 points) | 5k games (~40 points) | 10k games (~50 points) |
+| Eval + checkpoint every | 1k games (31 points) | 10k games (41 points) | 20k games (51 points) |
 | Seeds | 5 | 3 | 1 per arm |
 | Device | GPU (`mps`) where available: ~2–5 min/run; a CPU gradient step is ~50 ms even here (§4.8) | GPU (CPU-only exceeds 6 h/run, §4.8) | GPU only (`--device mps` or `cuda`) |
 
 Replay capacities were doubled on Nov 23, when D2 began storing both sides' moves. That keeps each buffer at ≈ 10% of training's transitions.
+
+**Budget rule (Nov 24).** When a 6×6 or 8×8 budget changes, rescale the other two settings with it. Keep `replay_capacity` ≈ 10% of training's transitions (games × 32 on 6×6, × 60 on 8×8) and `eval_every` ≈ games / 40 on 6×6 or / 50 on 8×8. That keeps the buffer's reach and the pool's snapshot count the same at any budget. For example, E2 at 200k games means `replay_capacity: 640000` and `eval_every: 5000`.
 
 **Settings change (Nov 24, before any experiment run).** `eps_end` went from 0.05 to 0.1 and `target_update_every` from 1,000 to 250, on all three boards and for all four conditions. The debugging ladder (§4.6) showed slow value propagation: with γ = 1, a value moves back one decision per target update, and a 4×4 run got only ~11–23 updates. It also showed narrow coverage under naive self-play. A one-seed rerun with both changes sped up early learning (N's 4×4 accuracy at 2k games went from 57% to 71%), raised late accuracy 2–3 points on the self-play rungs, and showed no instability. Neither change costs measurable time: a target update is a ~0.2 ms weight copy, which adds ≈ 0.3 s per 6×6 run and ≈ 1.6 s per 8×8 run, and ε doesn't change the number of forward passes or transitions. Target updates per run are now ≈ 92 on 4×4, ≈ 1,600 on 6×6 and ≈ 7,600 on 8×8. The evidence is from 4×4 only. 6×6 and 8×8 already got ~400 and ~1,900 updates per run at 1,000, so the change was applied there for consistency and is untested on those boards. **E7** (§4.8) reruns the old settings on the same code to measure the difference.
 
@@ -367,16 +369,16 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 |---|---|---|---|
 | E0 | 4×4 supervised sanity check: fit the net to exact solver values (separates RL bugs from capacity issues) | 1 | Nov 24, only if stuck |
 | E1 | 4×4 2×2 | 4 × 5 seeds = 20 (minutes each) | Launch Nov 25 |
-| P | 6×6 pilots | 4 × 1 seed | Launch Nov 25 (runs over the holiday) |
-| E2 | 6×6 2×2 | 4 × 3 seeds = 12 | Launch Dec 1 |
+| P | 6×6 pilots, 400k games (their curves set E2's budget) | 4 × 1 seed | Launch Nov 25 on the laptop GPU (~6–7 h sharing it with P8) |
+| E2 | 6×6 2×2 | 4 × 3 seeds = 12 | Launch Dec 1 on the laptop GPU, 4 at a time: ~8½ h at 200k games, ~16½ h at 400k |
 | E3 | Cross-play matrices | — | Dec 1 (4×4) / Dec 4 (6×6) |
 | E5 | Checkpoint regret (self-history + held-out; + true regret on 4×4) | — | Dec 2 (4×4) / Dec 4 (6×6) |
 | E4 | *(Could)* A-naive replay-buffer ablation (¼ size), or pool mix 80/20 | 3 seeds | Only with spare compute |
-| P8 | *(Could)* 8×8 pilot: A-naive (`make pilot-8x8`) | 1 | Launch Nov 25, only if gate 1 passed |
+| P8 | *(Could)* 8×8 pilot: A-naive, 1M games (`make pilot-8x8`) | 1 | Launch Nov 25 alongside P (gate 1 passed Nov 24); ~1 day |
 | E6 | *(Could)* 8×8 A pair: A-naive vs A-pool on the frozen code (`make sweep-8x8`) | 2 × 1 seed | Launch Dec 1 (Dec 2 at the latest), only if gate 2 passed |
 | E7 | *(Could)* Settings comparison: rerun with the pre-Nov-24 settings (`eps_end` 0.05, `target_update_every` 1,000) on the same code, compared with E1 / P. 4×4: `make sweep-4x4-old` (all 4 conditions × 5 seeds, ~5 min per run on `mps`). 6×6: `make pilot-6x6-old` (1 seed per condition, GPU hours) | 20 (4×4) + 4 (6×6) | 4×4 any time after E1 launches; 6×6 only with spare compute, never ahead of E2 |
 
-**Compute:** On Tue Nov 24, measure games/s and gradient steps/s on your laptop and server, then fix the 6×6 game budget so one run takes ≤ 6 h. Run as many seeds in parallel on the server as it has cores for (`tmux`), and `rsync` `runs/` back. **Fallback:** if the 12 E2 runs can't finish by Thu Dec 3, run 3 seeds for the A pair and 2 seeds for the N pair (10 runs).
+**Compute:** On Tue Nov 24, measure games/s and gradient steps/s on your laptop and server, then fix the 6×6 game budget so one run takes ≤ 6 h. ~~Run as many seeds in parallel on the server as it has cores for (`tmux`), and `rsync` `runs/` back.~~ *Revised Nov 24: the server is too small (below), so every 6×6/8×8 run goes on the laptop GPU, four at a time (`JOBS=4`; `DEVICE` defaults to `mps` on macOS). Keep the laptop plugged in and awake: run sweeps under `caffeinate -i`, inside `tmux` so closing the terminal doesn't kill them, with the lid open.* **Fallback:** if the 12 E2 runs can't finish by Thu Dec 3, run 3 seeds for the A pair and 2 seeds for the N pair (10 runs).
 
 Measured Nov 19 on the laptop (M1 Pro): one Double-DQN gradient step at batch 256, with the §4.5 network. Steps per game and per-run times were recomputed Nov 23 for both sides' transitions (D2), which doubles both.
 
@@ -404,7 +406,10 @@ Several 6×6 runs sharing the laptop GPU (2 torch threads each): 2 at once take 
 
 - **6×6:** 200k games fits the 6 h limit easily on the laptop GPU at `transitions_per_grad_step: 16`, so no fallback is needed there. On a CPU, 16 doesn't fit (8.6 h even at the best thread count), and 32 does (4.4–5.3 h).
 - **8×8:** 500k games takes ~9 h on the laptop GPU alone, so a 24 h budget fits ~1.3M games. CPU is out (≥ 92 h).
-- **Still open (server):** cores, GPU, and the same script there (§11). Where E2 runs decides the rest. If the server has a CUDA GPU, E2 goes there, the laptop GPU is free for 8×8, and gate 1 passes. If the server is CPU-only, E2 must use either the laptop GPU at 16 or the server CPU at 32 for every condition. In the first case 8×8 can only use the laptop GPU after E2 finishes.
+- **Budgets (decided Nov 24).** The holiday leaves spare GPU time, so the pilots get generous budgets, and the experiments' budgets are set on Nov 30 from the pilots' curves instead of guessed now. 6×6 pilots: 400k games, ~3 h alone or ~5.5 h with four sharing the GPU. E2 is then 200k–400k: ~8½–16½ h for all 12 runs, four at a time, either way done before the Dec 3 fallback deadline. P8: 1M games, ~18.4 h alone on the GPU. E6 is ≤ 1M, set at gate 2. Replay and eval spacing follow the budget rule in §4.5.
+- **Server (measured Nov 24):** 2 ARM cores (Neoverse-N1, aarch64), ~11 GB RAM, no GPU. With 1 torch thread: 6×6 self-play 7.7 / 9.1 ms per game, gradient step 445 ms, eval 3.0 s, so a 200k-game run takes **50 h** (25 h at tpgs 32). 8×8: 26 / 29 ms per game, 783 ms per step, 11.3 s per eval point, so 500k games take **412 h**. That's ~5× slower per core than the laptop CPU and ~39× slower than the laptop GPU. **Decision: E1, P, E2, P8 and E6 all run on the laptop GPU.** The server is only useful for low-priority 4×4 work such as E7's 4×4 half, one run at a time so the user's sites keep a core.
+- **`transitions_per_grad_step` stays at 16** for every condition. The 32 fallback was only for CPU-only training, which no experiment uses now.
+- **8×8 shares the laptop GPU with E2 by taking turns.** E2 has priority: E6 starts only after E2 finishes. The P8 pilot runs over the holiday next to the 6×6 pilots, which aren't E2.
 
 Self-play, inference, and evaluation come on top. **On CPU only, gradient steps alone take ~11.6 h per 6×6 run, about twice the 6 h limit, so 6×6 needs a GPU.** If one isn't available for all 12 runs, set `transitions_per_grad_step: 32` for every condition. That restores ≈ 1 step per game, with each transition sampled ≈ 8× instead of 16×. Decide this at the Nov 24 throughput measurement, before E1. Runs that share cores with `--torch-threads 1` are slower still. Train on a GPU wherever one is available: the laptop's (`DEVICE=mps`) is 14–18× faster than its CPU on this network.
 
@@ -497,6 +502,7 @@ web/ (Vite + TypeScript, no framework)
 
 - Deploy `web/dist` from the `othello-rl` repo with the official GitHub Pages Action, on the subdomain **`othello.johnnygoodlad.dev`**. The portfolio (`johnnygoodlad.dev` repo) is a project site with its own custom domain rather than the `<username>.github.io` user site, so other repos are *not* served under `johnnygoodlad.dev/<repo>/` automatically. A subdomain keeps the demo independent of the portfolio repo. Vite `base` is `/`.
 - Setup order (custom domain in GitHub *before* DNS, which prevents subdomain takeover): repo Settings → Pages → Custom domain `othello.johnnygoodlad.dev` → Namecheap Advanced DNS: `CNAME` host `othello` → `thejrock.github.io.` → wait for the certificate → tick Enforce HTTPS. No `CNAME` file is needed with Actions deploys.
+- The server's wildcard DNS (`*.johnnygoodlad.dev` points at the server) doesn't conflict: a specific `othello` CNAME record takes precedence over a wildcard. Never add an `othello.johnnygoodlad.dev` block to the server's Caddyfile.
 - `.dev` is HSTS-preloaded, so browsers will only load the subdomain over HTTPS. Until GitHub issues its certificate, it shows a certificate error, so don't link it from the portfolio until HTTPS works.
 - *Fallback:* copy `web/dist` into a folder of your portfolio repo.
 - Link it from the portfolio home page. Test on desktop Chrome/Safari and on a phone (tap-to-move, fits at 360 px).
@@ -536,14 +542,15 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 **Tue Nov 24** (~4–5 h)
 - [x] Debugging ladder rungs 1–3 on 4×4 (§4.6), with JSONL logging. *(done Nov 24; results in §4.6)*
 - [x] N must show Q correlating with solver values. Both must show accuracy clearly above chance and ≥ 90% vs random. Run E0 if stuck. *(Nov 24: passed on the positions the nets actually play, 98–99% accuracy and Q corr 0.82–0.87. Whole-set accuracy is 73–75% vs 49.4% chance. "≥ 90% vs random" was revised: π\* itself scores 77.8% on the 4×4 bank and 88.1% from the start, §4.6. E0 not needed: the nets fit what they visit, and the shortfall is coverage.)*
-- [ ] Measure throughput on laptop (CPU and `mps`) and server, for 6×6 and 8×8; fix the 6×6 budget and whether 12 runs fit (§4.8 fallback). *(Laptop done Nov 24, §4.8: 6×6 is 1.5 h/run on `mps`, and 4 runs share the GPU at ~2× the throughput of one. Server pending: run `scripts/throughput.py` there.)*
-- [ ] **8×8 gate 1** (§4.8): set the 8×8 game budget, or drop 8×8. *(Nov 24: 500k games is ~9 h on the laptop GPU; up to ~1.3M fit in 24 h. It passes if E2 doesn't need the laptop GPU, which depends on the server.)*
+- [x] Measure throughput on laptop (CPU and `mps`) and server, for 6×6 and 8×8; fix the 6×6 budget and whether 12 runs fit (§4.8 fallback). *(Done Nov 24, §4.8. The laptop GPU runs a 6×6 run in 1.5 h, and 4 runs share it at ~2× the throughput of one. The server, 2 ARM cores with no GPU, would take 50 h per 6×6 run, so every experiment runs on the laptop GPU at `transitions_per_grad_step: 16`, with no fallback. 6×6 pilot budget: 400k games; E2's budget is set Nov 30 from the pilot curves.)*
+- [x] **8×8 gate 1** (§4.8): set the 8×8 game budget, or drop 8×8. *(Passed Nov 24. `games: 1000000` (~18.4 h alone on the laptop GPU), `replay_capacity: 6000000`, `eval_every: 20000`. The laptop GPU is hardware E2 doesn't need outside E2's own window: P8 shares it with the 6×6 pilots, and E6 starts after E2 finishes.)*
 
 **Wed Nov 25** (~4 h) — **M1**
-- [ ] Opponent pool, checkpointing, YAML configs, run directories with commit hash.
-- [ ] Launch **E1** (4×4 2×2, 20 runs).
-- [ ] Launch **6×6 pilots** (4 runs) on the server before leaving for the holiday.
-- [ ] If gate 1 passed: launch the **8×8 pilot** P8 on hardware the 6×6 pilots don't use (`make pilot-8x8 DEVICE=mps`).
+- [ ] Opponent pool, checkpointing, YAML configs, run directories with commit hash. *(Checkpointing, YAML configs and run directories done Nov 24 with `train.py`. Remaining: `pool.PoolSampler`, then ladder rung 4: A-pool and N-pool on 4×4. E1 and the pilots include pool runs, so do this first.)*
+- [ ] Launch **E1** (4×4 2×2, 20 runs): `caffeinate -i make sweep-4x4` in `tmux`, four at a time on the laptop GPU, ~30 min.
+- [ ] Launch **6×6 pilots** (4 runs, 400k games) ~~on the server before leaving for the holiday~~ on the laptop GPU after E1: `caffeinate -i make pilot-6x6` (*Nov 24: the server is too slow, §4.8. The user is home for the holiday, and the laptop can run day and night*). ~6–7 h sharing the GPU with P8.
+- [ ] If gate 1 passed (it did, Nov 24): launch the **8×8 pilot** P8 (1M games) ~~on hardware the 6×6 pilots don't use~~ on the laptop GPU alongside the 6×6 pilots: `caffeinate -i make pilot-8x8` in a second `tmux` window (*Nov 24: there is no second GPU, and the pilots aren't E2, so sharing is fine*). ~1 day.
+- [ ] *(optional)* On the server: E7's 4×4 half. Do it after `git pull` of the code E1 ran, so both use the same code. Run `.venv/bin/python scripts/build_data.py solve4x4`, then `nice -n 10 make sweep-4x4-old JOBS=1` in `tmux`. That's one run at a time so the sites keep a core, roughly 1½ days (estimate; check with `scripts/throughput.py --config configs/4x4.yaml` first).
 
 **Thu Nov 26 – Sat Nov 28** — Thanksgiving (optional ~2 h Sat)
 - [ ] *(optional)* Start the 6×6 endgame solver or the TS engine port. Both are off the training critical path.
@@ -553,12 +560,13 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 
 **Mon Nov 30** (~4 h)
 - [ ] Review E1 and the pilots. If 6×6 isn't learning, change at most 2 shared knobs (lr, budget, ε schedule), the same for all four conditions.
-- [ ] **8×8 gate 2** (§4.8): go/no-go on E6.
+- [ ] Set E2's budget from the pilot curves: 200k if they've plateaued by then, up to 400k if still rising. Rescale `replay_capacity` and `eval_every` with it (§4.5 budget rule).
+- [ ] **8×8 gate 2** (§4.8): go/no-go on E6. If go, set E6's budget (≤ 1M) from P8's curve and rescale likewise.
 - [ ] 6×6 endgame solver + 500-position test set, cached.
 
 **Tue Dec 1** (~4 h) — **M2: experiment code freeze**
-- [ ] Launch **E2** (6×6 2×2, 12 runs, endgame accuracy in eval).
-- [ ] If gate 2 passed: launch **E6** (8×8 A pair) on hardware E2 doesn't use (`make sweep-8x8 DEVICE=mps`), on Dec 2 at the latest.
+- [ ] Launch **E2** (6×6 2×2, 12 runs, endgame accuracy in eval): `caffeinate -i make sweep-6x6` on the laptop GPU, four at a time in three batches, ~8½ h at 200k or ~16½ h at 400k.
+- [ ] If gate 2 passed: launch **E6** (8×8 A pair) ~~on hardware E2 doesn't use~~ on the laptop GPU once E2 has finished (`make sweep-8x8`), on Dec 2 at the latest.
 - [ ] Analysis scripts: seed-band curves, §4.7 summary numbers, Spearman ρ, H4 gap.
 - [ ] Cross-play script; run E3 on 4×4.
 
@@ -620,7 +628,7 @@ No new experiments in report week. Extra seeds may run in the background if they
 | 6×6 not learning by Dec 1 | Pilot score vs positional < 50% | 4×4 becomes the main result; present 6×6 as preliminary |
 | Pool ≈ naive everywhere | Overlapping seed bands in both rows | That's a result: lean on F3, F7, and the D1 framing (the replay buffer is already an implicit pool). In the A row, also note the D2 dilution: only ~25% of A-pool transitions face a past snapshot |
 | Demo eats presentation time | Not playable by Dec 3 | Play view only for the talk; the rest moves to Dec 11–16 |
-| Server unavailable | — | Run on the laptop GPU (`mps`) overnight with a reduced 6×6 budget and the seed fallback. 8×8 is dropped, because E2 needs the laptop |
+| Server unavailable | — | Run on the laptop GPU (`mps`) overnight with a reduced 6×6 budget and the seed fallback. 8×8 is dropped, because E2 needs the laptop. *This happened (Nov 24): the server is 2 ARM cores with no GPU. The laptop GPU carries everything. A 6×6 run is 1.5 h alone or ~2.7 h with four sharing, so no budget cut was needed. 8×8 takes turns with E2 instead of being dropped (§4.8)* |
 
 **Slip rule:** if any milestone slips by more than one day, apply the matching cut immediately rather than borrowing from the Dec 7–9 presentation days.
 
@@ -655,7 +663,7 @@ Abstract · 1 Introduction and question · 2 Background and related work (self-p
 ## 11. Open items
 
 - [x] Presentation: ~15 minutes. Report: 4–6 pages in a single-column conference template (IEEE, NeurIPS, ICLR, or equivalent). Figures count toward the pages, references and the appendix don't; the limit is soft but no filler or oversized figures (Nov 19).
-- [ ] Server specs: CPU cores, GPU? These decide whether all 12 E2 runs fit and whether 8×8 can run beside them (Nov 24). *Run on the server: `nproc`, `nvidia-smi`, and `scripts/throughput.py` for 6×6 and 8×8 (CPU with `--torch-threads 1`, plus `--device cuda` if it has a GPU), with `--json`.* A GPU matters for 6×6 too: on CPU, gradient steps alone take ~11.6 h per 6×6 run with both sides stored, about twice the 6 h/run limit (§4.8). Without enough GPU, use the `transitions_per_grad_step: 32` fallback.
+- [x] Server specs: CPU cores, GPU? These decide whether all 12 E2 runs fit and whether 8×8 can run beside them (Nov 24). *Run on the server: `nproc`, `nvidia-smi`, and `scripts/throughput.py` for 6×6 and 8×8 (CPU with `--torch-threads 1`, plus `--device cuda` if it has a GPU), with `--json`.* *Setup (Nov 24): the server is compute-only for this project. Clone it to `/srv/othello-rl` with a read-only deploy key (step 3 of the server's own project guide). Use a Python venv and `tmux`, with no compose stack, Caddy block, or database. Bring results back with `make sync SERVER=… SERVER_DIR=/srv/othello-rl`. Other sites share the machine, so leave cores free when setting `JOBS`.* *Specs (Nov 24): 2 ARM cores (Neoverse-N1), ~11 GB RAM, no NVIDIA GPU, Ubuntu 24.04, tests pass (205 passed, 2 skipped). A 6×6 run takes 50 h there, so everything heavy goes on the laptop GPU (§4.8).* A GPU matters for 6×6 too: on CPU, gradient steps alone take ~11.6 h per 6×6 run with both sides stored, about twice the 6 h/run limit (§4.8). Without enough GPU, use the `transitions_per_grad_step: 32` fallback.
 - [x] Demo URL: `othello.johnnygoodlad.dev` (portfolio is a project site with a custom domain; §5.5).
 - [x] Opponent transitions: the instructor asked for the opponent's moves to be included in training. D2 was revised on Nov 23 to store both sides' moves in all four conditions. `pool_p_latest` stays at 0.5, and the resulting A-pool dilution (~25% past-snapshot environment) goes in the report (D2).
 - [x] Shared knobs before E1 (decide by Wed Nov 25; the same for all four conditions). The ladder (§4.6) found two things. (a) Naive self-play at ε = 0.05 covers only ~200 of 7,912 positions, so 4×4 accuracy plateaus at ~75%. (b) Value propagation is slow, with only ~11–23 target updates per 4×4 run. Options: keep the §4.5 settings, so coverage is part of the result, or change `eps_end` (e.g. 0.1) and/or `target_update_every` (e.g. 250), checked with one quick ladder rerun first. *Rerun done Nov 24 (§4.6): `target_update_every: 250` clearly speeds early learning. Both knobs together add +2–3 points of late accuracy on the self-play rungs. ε = 0.1 widens coverage only from ~2% to ~3%. Decided Nov 24: both adopted on all three boards (§4.5). The old settings stay available as E7 (§4.8) for a comparison in the report.*

@@ -3,8 +3,9 @@
 
 PY ?= .venv/bin/python
 JOBS ?= 4
-# training device for the sweep targets: cpu | cuda | mps (8×8 needs a GPU, spec §4.8)
-DEVICE ?= cpu
+# training device for the sweep targets: cpu | cuda | mps (8×8 needs a GPU, spec §4.8).
+# Defaults to the Apple GPU on macOS (the laptop runs every experiment) and to cpu elsewhere.
+DEVICE ?= $(shell [ "$$(uname -s)" = Darwin ] && echo mps || echo cpu)
 SERVER ?=
 SERVER_DIR ?= othello-rl
 RUN ?=
@@ -53,7 +54,7 @@ OLD_KNOBS = --eps-end 0.05 --target-update-every 1000
 sweep-4x4-old:  ## E7: E1 with the pre-Nov-24 settings (eps_end 0.05, target_update_every 1000)
 	$(PY) scripts/sweep.py --config configs/4x4.yaml --exp e7-4x4-old --seeds 0 1 2 3 4 --jobs $(JOBS) -- --device $(DEVICE) $(OLD_KNOBS)
 
-pilot-6x6:  ## P: 6x6, 2x2 conditions x 1 seed
+pilot-6x6:  ## P: 6x6, 2x2 conditions x 1 seed, 400k games (sets the E2 budget, spec §4.8)
 	$(PY) scripts/sweep.py --config configs/6x6.yaml --exp pilot-6x6 --seeds 0 --jobs $(JOBS) -- --device $(DEVICE)
 
 pilot-6x6-old:  ## E7: the 6x6 pilots with the pre-Nov-24 settings (only with spare compute)
@@ -62,7 +63,7 @@ pilot-6x6-old:  ## E7: the 6x6 pilots with the pre-Nov-24 settings (only with sp
 sweep-6x6:  ## E2: 6x6, 2x2 conditions x 3 seeds
 	$(PY) scripts/sweep.py --config configs/6x6.yaml --exp e2-6x6 --seeds 0 1 2 --jobs $(JOBS) -- --device $(DEVICE)
 
-pilot-8x8:  ## P8: 8x8 env-naive, 1 seed; gate 1 must pass first (spec §4.8). Needs DEVICE=mps or cuda
+pilot-8x8:  ## P8: 8x8 env-naive, 1 seed, 1M games (gate 1 passed Nov 24, spec §4.8). Needs a GPU
 	$(PY) scripts/sweep.py --config configs/8x8.yaml --exp pilot-8x8 --targets env --samplings naive --seeds 0 --jobs 1 -- --device $(DEVICE)
 
 sweep-8x8:  ## E6: 8x8 env-naive + env-pool, 1 seed; gate 2 must pass first. Needs DEVICE=mps or cuda
