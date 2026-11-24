@@ -289,8 +289,9 @@ Replay capacities were doubled on Nov 23, when D2 began storing both sides' move
   - **A transition:** the mover's ply + the other side's reply + any forced passes, `s → s'` (the mover to move again with a legal square, or terminal).
 - **Naive:** opponent = the current online network.
 - **Pool:** add a frozen copy every checkpoint interval (keep all). Each round, split the B games into 8 groups. Each group's opponent is the latest network with p = 0.5, otherwise one drawn uniformly from past snapshots. (MADRID uses checkpoints only *after* training, so it doesn't prescribe a training-time sampling rule. This 50/50 mix is a common default; if you want a cited rule, check how the TiZero paper, its ref. [29], samples its self-play opponents.)
+  - *Implemented Nov 24 (`pool.PoolSampler`).* Snapshots are loaded back from the checkpoint files (D8), so the pool is exactly the saved checkpoints, and they're frozen (eval mode, no gradients). They play with the learner's current ε. Two groups that draw the same snapshot get the same object, so their games share one forward pass. Each log row adds `pool_size` (snapshots available since the last eval point) and `opp_past_frac` (the fraction of groups that played a past snapshot, ≈ 1 − `pool_p_latest`). Tests cover the mix for p = 0, 0.5, 0.8 and 1, uniform draws, frozen weights, ε, and batching. Seven planted bugs were all caught, including "snapshot = the live network", which would silently turn the pool into naive play.
 - Log one JSONL line per eval point: games, grad steps, wall time, ε, mean loss, mean max-Q, score vs each reference opponent (+ Wilson CI), self-play score (D5), 4×4 accuracy (+ Q-vs-solver MSE for N), 6×6 endgame accuracy.
-  - *Implemented Nov 24* (`train.train`, `evaluate.evaluate_checkpoint`). Each row also has `buffer` (replay size), `grad_norm` (before clipping), `plies_per_game`, `transitions_per_game`, `learner_score` (training games), `mean_target`, and `q_corr_4x4`, the Pearson correlation of Q with the exact values. Unlike the MSE, it ignores scale, so it shows whether Q ranks moves correctly before its magnitudes are right. Training stats are means since the previous eval point. `epsilon` is the ε the learner actually used. Eval points land exactly on multiples of `eval_every` (the round before one is cut short), so `games`, `eval_every` and `parallel_games` must all divide by `pool_groups`.
+  - *Implemented Nov 24* (`train.train`, `evaluate.evaluate_checkpoint`). Each row also has `buffer` (replay size), `pool_size` and `opp_past_frac` (pool runs), `grad_norm` (before clipping), `plies_per_game`, `transitions_per_game`, `learner_score` (training games), `mean_target`, and `q_corr_4x4`, the Pearson correlation of Q with the exact values. Unlike the MSE, it ignores scale, so it shows whether Q ranks moves correctly before its magnitudes are right. Training stats are means since the previous eval point. `epsilon` is the ε the learner actually used. Eval points land exactly on multiples of `eval_every` (the round before one is cut short), so `games`, `eval_every` and `parallel_games` must all divide by `pool_groups`.
 
 **Debugging ladder.** Get each rung working before the next. Rung 1 is also a useful "stationary MDP" reference point for the talk.
 1. A vs a **fixed random opponent**: plain single-agent DQN on a stationary MDP. It should beat random ≥ 95% quickly *from the start position* (see the bars below).
@@ -338,6 +339,24 @@ So "≥ 95% vs random" can only apply from the start position. On the 4×4 bank 
 - **Late gains in the self-play rungs are modest (+2–3 points accuracy, +3–5 vs positional) and can't be split between the two knobs.** This is one seed, and within-run jitter is ~±1 point.
 - **ε = 0.1 widens coverage only a little.** In 8,000 self-play games from the final nets, about one buffer's worth, the eval-set positions reached go from ~150 (1.9%) at ε = 0.05 to ~220–270 (2.8–3.4%) at ε = 0.1, before D4 augmentation. The narrowness is structural: one start position and a nearly deterministic policy. The knobs don't fix it; it stays a property of naive self-play for the pool comparison to address.
 - **Decision (Nov 24): adopt both, on every board** (§4.5). `runs/ladder/` (old settings) vs `runs/ladder-tuned/` (new) is a one-seed preview of E7 on 4×4. Keep both directories: `runs/` is not in git. `make ladder` now writes to `runs/ladder-tuned/` and refuses to replace an existing run, so the baseline can't be overwritten by accident.
+
+*Rung 4: pool sampling (Nov 24, current settings, `runs/ladder-tuned/`, seed 0), against rungs 2–3 rerun with the same settings.* Training-style coverage counts the eval-set positions reached in 8,000 games (about one buffer) from the final net at ε = 0.1. For naive that's the net against itself; for pool, half against itself and half against a uniformly drawn checkpoint of its own run.
+
+| Last 10 eval points | A-naive | A-pool | N-naive | N-pool |
+|---|---|---|---|---|
+| Accuracy, all 7,912 | 75.5% | 75.4% | 78.5% | 77.9% |
+| Q corr with minimax, all | 0.43 | 0.44 | 0.47 | 0.47 |
+| Score vs positional | 60.5% | 59.3% | 59.1% | 60.7% |
+| Minimax accuracy on own self-play positions (final net) | 97.7% | 96.6% | 96.4% | 97.6% |
+| Training-style coverage of the eval set | 3.4% | **5.1%** | 2.8% | **4.0%** |
+| `opp_past_frac` (target 0.5) | — | 0.501 | — | 0.491 |
+| Wall time (two runs sharing the GPU) | 4¾ min | 5½ min | 5½ min | 5¾ min |
+
+- **Rung 4 passes.** The pool behaves as designed: ~50% of groups play past snapshots, and the pool reached 30 snapshots by game 30k. Both pool runs learn their own positions as well as the naive runs do.
+- **On one seed, pool ≈ naive on every 4×4 metric**, although pool training reaches ~1.4–1.5× more eval positions. The extra positions mostly come from games against weak early snapshots, and on 4×4 they don't buy accuracy. One seed can't separate the conditions (within-run jitter is ~±1 point). E1's 5 seeds will, and "more coverage without more accuracy" is worth watching for.
+- `opp_past_frac` ≈ 0.5 confirms D2's dilution arithmetic. Half of A-pool's games are against past snapshots, and in each of those, only the learner's side has a snapshot as its environment, so ~25% of transitions do.
+- The self-play score sits at 0.50 in all four conditions: F3's flat line, already visible on 4×4.
+
 
 ### 4.7 Evaluation protocol (`evaluate.py`, `regret.py`)
 
@@ -546,7 +565,7 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 - [x] **8×8 gate 1** (§4.8): set the 8×8 game budget, or drop 8×8. *(Passed Nov 24. `games: 1000000` (~18.4 h alone on the laptop GPU), `replay_capacity: 6000000`, `eval_every: 20000`. The laptop GPU is hardware E2 doesn't need outside E2's own window: P8 shares it with the 6×6 pilots, and E6 starts after E2 finishes.)*
 
 **Wed Nov 25** (~4 h) — **M1**
-- [ ] Opponent pool, checkpointing, YAML configs, run directories with commit hash. *(Checkpointing, YAML configs and run directories done Nov 24 with `train.py`. Remaining: `pool.PoolSampler`, then ladder rung 4: A-pool and N-pool on 4×4. E1 and the pilots include pool runs, so do this first.)*
+- [x] Opponent pool, checkpointing, YAML configs, run directories with commit hash. *(Done Nov 24, a day early: checkpointing, configs and run directories with `train.py`, then `pool.PoolSampler`. Ladder rung 4 passed, §4.6. E1 and the pilots are ready to launch.)*
 - [ ] Launch **E1** (4×4 2×2, 20 runs): `caffeinate -i make sweep-4x4` in `tmux`, four at a time on the laptop GPU, ~30 min.
 - [ ] Launch **6×6 pilots** (4 runs, 400k games) ~~on the server before leaving for the holiday~~ on the laptop GPU after E1: `caffeinate -i make pilot-6x6` (*Nov 24: the server is too slow, §4.8. The user is home for the holiday, and the laptop can run day and night*). ~6–7 h sharing the GPU with P8.
 - [ ] If gate 1 passed (it did, Nov 24): launch the **8×8 pilot** P8 (1M games) ~~on hardware the 6×6 pilots don't use~~ on the laptop GPU alongside the 6×6 pilots: `caffeinate -i make pilot-8x8` in a second `tmux` window (*Nov 24: there is no second GPU, and the pilots aren't E2, so sharing is fine*). ~1 day.

@@ -52,7 +52,9 @@ def tiny_config(data_files, tmp_path, **overrides) -> Config:
     return Config(**{**base, **overrides})
 
 
-@pytest.mark.parametrize(("target", "sampling"), [("negamax", "naive"), ("env", "random")])
+@pytest.mark.parametrize(
+    ("target", "sampling"), [("negamax", "naive"), ("env", "random"), ("negamax", "pool")]
+)
 def test_tiny_run_logs_checkpoints_and_paces_gradient_steps(data_files, tmp_path, target, sampling):
     # Rounds of 24 games: the round before each eval point must be cut short to 8.
     cfg = tiny_config(
@@ -70,10 +72,15 @@ def test_tiny_run_logs_checkpoints_and_paces_gradient_steps(data_files, tmp_path
     assert rows[-1]["grad_steps"] == round(transitions) // cfg.transitions_per_grad_step
     assert rows[-1]["buffer"] == min(round(transitions), cfg.replay_capacity)
     for r in rows[1:]:
-        if sampling == "naive":  # negamax, both sides stored (D2): one transition per ply
-            assert r["transitions_per_game"] == r["plies_per_game"]
-        else:  # rung 1: only the learner's real moves, about half the plies
+        if sampling == "random":  # rung 1: only the learner's real moves, about half the plies
             assert r["transitions_per_game"] < 0.6 * r["plies_per_game"]
+        else:  # negamax, both sides stored (D2): one transition per ply
+            assert r["transitions_per_game"] == r["plies_per_game"]
+    if sampling == "pool":  # one snapshot per checkpoint, game 0 included
+        assert [r["pool_size"] for r in rows] == [0, 1, 2]
+        assert all(0.0 <= r["opp_past_frac"] <= 1.0 for r in rows[1:])
+    else:
+        assert not any("pool_size" in r for r in rows)
 
 
 def test_tiny_run_logs_4x4_solver_metrics(data_files, tmp_path):

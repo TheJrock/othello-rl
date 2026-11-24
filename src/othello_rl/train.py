@@ -114,6 +114,7 @@ def train(cfg: Config, overwrite: bool = False) -> Path:
                 "buffer": len(buffer),
                 **{k: v / window_games for k, v in game_sums.items()},
                 **{k: float(np.mean(v)) for k, v in step_info.items()},
+                **sampler.stats(),  # pool_size, opp_past_frac for pool runs; nothing otherwise
                 **evaluate.evaluate_checkpoint(online, previous, cfg, ctx, rng),
             }
             row["wall_time"] = time.perf_counter() - start

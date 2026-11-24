@@ -13,6 +13,7 @@ from typing import Protocol
 import numpy as np
 
 from .config import Config
+from .nets import load_net
 from .players import NetPlayer, Player, RandomPlayer
 
 
@@ -33,6 +34,10 @@ class OpponentSampler(Protocol):
         """Both players use the same ε in training games (spec §4.6)."""
         ...
 
+    def stats(self) -> dict[str, float]:
+        """Fields for the next log row, covering the rounds since the last call; resets the counts."""
+        ...
+
 
 class NaiveSampler:
     """Latest vs latest: every group plays the live learner network. Returning the learner object
@@ -51,6 +56,9 @@ class NaiveSampler:
 
     def set_epsilon(self, eps: float) -> None:
         return None  # the opponent is the learner, whose ε the training loop already sets
+
+    def stats(self) -> dict[str, float]:
+        return {}
 
 
 class FixedSampler:
@@ -76,11 +84,19 @@ class FixedSampler:
     def set_epsilon(self, eps: float) -> None:
         return None  # the fixed opponent's play doesn't depend on ε
 
+    def stats(self) -> dict[str, float]:
+        return {}
+
 
 class PoolSampler:
     """Each group plays the live learner with probability cfg.pool_p_latest, otherwise a frozen
     snapshot drawn uniformly from all past checkpoints (game 0 included). Before the first checkpoint
-    exists, every group plays the learner."""
+    exists, every group plays the learner.
+
+    Snapshots are loaded back from the checkpoint files, so the pool is exactly the saved checkpoints
+    (spec D8) and a broken checkpoint fails here, not weeks later in the regret analysis. Each
+    snapshot is one NetPlayer object, so groups that draw the same snapshot are batched into one
+    forward pass by selfplay.play_games, just as groups that draw the learner are."""
 
     store_opponent_moves = True
 
@@ -88,16 +104,37 @@ class PoolSampler:
         self.learner = learner
         self.cfg = cfg
         self.snapshots: list[NetPlayer] = []
+        self.epsilon = cfg.eps_start
+        self._past = 0  # groups that drew a past snapshot since the last stats() call
+        self._total = 0  # groups drawn since the last stats() call
 
     def opponents(self, n_groups: int, rng: np.random.Generator) -> list[Player]:
-        raise NotImplementedError("pool.PoolSampler.opponents")
+        if not self.snapshots:
+            return [self.learner] * n_groups
+        latest = rng.random(n_groups) < self.cfg.pool_p_latest
+        picks = rng.integers(0, len(self.snapshots), n_groups)
+        self._past += int((~latest).sum())
+        self._total += n_groups
+        return [self.learner if lat else self.snapshots[i] for lat, i in zip(latest, picks)]
 
     def on_checkpoint(self, path: Path, games: int) -> None:
         """Load the checkpoint with nets.load_net and append it as a frozen NetPlayer."""
-        raise NotImplementedError("pool.PoolSampler.on_checkpoint")
+        net = load_net(path, self.cfg).to(self.cfg.device).requires_grad_(False)
+        self.snapshots.append(NetPlayer(net, epsilon=self.epsilon, device=self.cfg.device, name=f"g{games}"))
 
     def set_epsilon(self, eps: float) -> None:
-        raise NotImplementedError("pool.PoolSampler.set_epsilon")
+        self.epsilon = eps
+        for snapshot in self.snapshots:
+            snapshot.epsilon = eps
+
+    def stats(self) -> dict[str, float]:
+        """pool_size: snapshots available during these rounds. opp_past_frac: the fraction of game
+        groups that played a past snapshot rather than the learner (≈ 1 − pool_p_latest)."""
+        out: dict[str, float] = {"pool_size": len(self.snapshots)}
+        if self._total:
+            out["opp_past_frac"] = self._past / self._total
+        self._past = self._total = 0
+        return out
 
 
 def make_sampler(cfg: Config, learner: NetPlayer) -> OpponentSampler:
