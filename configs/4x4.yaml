@@ -9,7 +9,7 @@ layers: 3
 # self-play and replay
 games: 30000
 parallel_games: 128
-replay_capacity: 50000
+replay_capacity: 100000     # both sides' transitions (spec D2): ~10% of training
 augment: true
 
 # optimisation

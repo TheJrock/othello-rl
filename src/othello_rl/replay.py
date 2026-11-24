@@ -13,11 +13,12 @@ from .engine import transform_mask, transform_planes
 
 @dataclass(frozen=True)
 class Transition:
-    """One learner transition. How s2 is chosen depends on the target mode; see selfplay.cut_transitions."""
+    """One transition from one side's perspective (either side of a game: spec D2). How s2 is chosen
+    depends on the target mode; see selfplay.cut_transitions."""
 
-    s: np.ndarray  # (3, n, n) planes, learner to move
+    s: np.ndarray  # (3, n, n) planes, the mover to move
     a: int  # action taken (pass = n*n)
-    r: float  # learner's perspective; non-zero only when done
+    r: float  # the mover's perspective; non-zero only when done
     s2: np.ndarray  # (3, n, n) planes of the next state
     mask2: np.ndarray  # (n*n + 1,) bool legal mask of s2; all False when done
     done: bool
@@ -36,7 +37,7 @@ class Batch:
 class ReplayBuffer:
     """Fixed-capacity ring buffer over preallocated numpy arrays.
 
-    Store planes as uint8 (they are 0/1), which keeps a 300k-transition 6×6 buffer around 65 MB.
+    Store planes as uint8 (they are 0/1), which keeps the 600k-transition 6×6 buffer around 160 MB.
     """
 
     def __init__(self, capacity: int, n: int, seed: int = 0):

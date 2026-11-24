@@ -9,7 +9,7 @@ layers: 4
 # self-play and replay
 games: 200000            # set from measured throughput on Nov 24 so one run takes <= 6 h (spec §4.8)
 parallel_games: 256
-replay_capacity: 300000
+replay_capacity: 600000     # both sides' transitions (spec D2): ~10% of training
 augment: true
 
 # optimisation

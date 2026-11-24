@@ -252,3 +252,62 @@ def test_env_targets_depend_on_the_opponent(table, rng):
     trs = [tr for traj, black in games for tr in cut_transitions(traj, black, "env")]
     y, q_sa = exact_targets(table, trs, "env")
     assert (y > q_sa).any()  # a random opponent often throws away its advantage
+
+
+# --- collect: one training round, both sides' moves stored (spec D2) -----------------------------
+
+
+def round_config(target):
+    from othello_rl.config import Config
+
+    return Config(board=N, target=target, parallel_games=16, pool_groups=4)
+
+
+def test_collect_negamax_stores_every_ply_of_both_sides(rng):
+    from othello_rl.selfplay import collect
+
+    p = RandomPlayer()
+    trs, stats = collect(p, [p] * 4, 16, round_config("negamax"), rng)
+    # Negamax keeps every ply as a transition, passes included, so both sides give one per ply.
+    assert len(trs) == round(stats["plies_per_game"] * 16) == stats["transitions_per_game"] * 16
+    assert sum(tr.done for tr in trs) == 16  # exactly one ply ends each game, whoever made it
+
+
+def test_collect_env_stores_every_real_move_of_both_sides(rng):
+    from othello_rl.selfplay import collect
+
+    learner = Recorder(RandomPlayer(), "learner")
+    opponents = [Recorder(RandomPlayer(), f"opp{g}") for g in range(4)]
+    trs, _ = collect(learner, opponents, 16, round_config("env"), rng)
+    asked = sum(len(b) for p in (learner, *opponents) for b in p.batches)  # every non-pass ply
+    assert len(trs) == asked  # env drops passes; every real move by either side is a transition
+    assert sum(tr.done for tr in trs) == 32  # each game ends both sides' last transition
+
+
+def test_collect_splits_groups_and_colours(rng):
+    from othello_rl.selfplay import collect
+
+    learner = Recorder(RandomPlayer(), "learner")
+    opponents = [Recorder(RandomPlayer(), f"opp{g}") for g in range(4)]
+    _, stats = collect(learner, opponents, 16, round_config("negamax"), rng)
+    start = E.initial(N)
+    assert learner.batches[0] == [start] * 8  # Black in half of all 16 games, one batched call
+    for opp in opponents:
+        assert opp.batches[0] == [start] * 2  # Black in half of its own group's 4 games
+    assert 0.0 <= stats["learner_score"] <= 1.0
+
+
+def test_collect_naive_batches_both_colours_together(rng):
+    from othello_rl.selfplay import collect
+
+    learner = Recorder(RandomPlayer(), "learner")
+    collect(learner, [learner] * 4, 16, round_config("env"), rng)
+    assert len(learner.batches[0]) == 16  # opponent is the learner itself: one call for every game
+
+
+def test_collect_rejects_uneven_groups(rng):
+    from othello_rl.selfplay import collect
+
+    p = RandomPlayer()
+    with pytest.raises(ValueError):
+        collect(p, [p] * 4, 10, round_config("env"), rng)

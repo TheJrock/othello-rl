@@ -10,7 +10,7 @@ layers: 5
 # self-play and replay
 games: 500000            # placeholder: set from measured throughput on Nov 24 so one run takes <= 24 h (gate 1, spec §4.8)
 parallel_games: 256
-replay_capacity: 1500000 # ~ last 10% of training's learner transitions, as on 6×6 (spec D1); rescale if `games` changes
+replay_capacity: 3000000 # ~ last 10% of training's transitions, both sides (spec D1, D2), as on 6×6; rescale if `games` changes
 augment: true
 
 # optimisation

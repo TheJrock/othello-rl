@@ -42,7 +42,7 @@ def test_cli_overrides_yaml():
     assert (cfg.board, cfg.target, cfg.sampling, cfg.seed) == (6, "negamax", "pool", 2)
     assert cfg.lr == pytest.approx(1e-4)
     assert cfg.endgame_set is None
-    assert cfg.replay_capacity == 300_000  # untouched YAML value survives
+    assert cfg.replay_capacity == 600_000  # untouched YAML value survives
     assert cfg.run_dir == Path("runs/e2-6x6/negamax-pool/seed2")
 
 

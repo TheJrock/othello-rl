@@ -1,6 +1,6 @@
 # Othello Self-Play — Project Spec & Timeline
 
-Companion to `docs/proposal.md` · Written Wed Nov 18, 2026 · Rev. 4 (2×2 design, MADRID-style checkpoint regret, repo scaffold; Nov 19: gated 8×8 add-on, D9 and §4.8; Nov 23: deeper opening banks, §4.7, and a demo pass rule, §5.1)
+Companion to `docs/proposal.md` · Written Wed Nov 18, 2026 · Rev. 4 (2×2 design, MADRID-style checkpoint regret, repo scaffold; Nov 19: gated 8×8 add-on, D9 and §4.8; Nov 23: deeper opening banks, §4.7; a demo pass rule, §5.1; both sides' transitions stored, D2)
 
 | Date | Milestone |
 |---|---|
@@ -63,10 +63,16 @@ The proposal's MDP row ("opponent's policy is part of the environment") describe
   - The replayed transitions were generated under *older opponents*, i.e. a different transition function (the proposal's Lectures 14–15 connection). Transitions are stochastic whenever the opponent is (ε-greedy or sampled from a pool).
 - **N — Negamax.** `s'` is the opponent's turn, and the target is `−max_a' Q(s', a')`. Your own network stands in for the opponent's best reply, so the target is the game's minimax value whatever the real opponent does. The pool only changes *which positions reach the replay buffer*. The non-stationarity is the shifting state distribution plus bootstrapping from a moving network.
 - **Prediction (H4):** the pool helps A more than N. The literature leans this way: AlphaGo's policy-gradient stage sampled past opponents, while AlphaZero's minimax-style value targets used only the latest network. On small Othello boards (fairly transitive games) the effect may be small. Either outcome is reportable.
-- **Note for the analysis:** under A-naive, the replay buffer already holds transitions from recent past selves, so the buffer acts as an *implicit short-window pool*. With 300k transitions on 6×6, that is roughly the last ~10% of training. Report this; never tune buffer size per condition.
+- **Note for the analysis:** under A-naive, the replay buffer already holds transitions from recent past selves, so the buffer acts as an *implicit short-window pool*. With 600k transitions on 6×6 (both sides' moves, D2), that is roughly the last ~10% of training. Report this; never tune buffer size per condition.
 - **If you could only run one,** run A. It is the formulation where the pool's mechanism actually operates, and it matches the proposal's MDP and course connection.
 
-**D2. Store only the learner's moves, in all four conditions.** In each game, one side is "the learner" (Black in half the games, White in the other half). Only its transitions enter replay. This keeps data volume identical across the 2×2, so the *only* differences are the target and the opponent sampling. N could legally use both sides' moves; skip that to keep the comparison clean.
+**D2. Store both sides' moves, in all four conditions.** *(Revised Nov 23 at the instructor's direction. It was "learner's moves only".)* In each game, one side is "the learner" (the current network: Black in half the games, White in the other half). The other side is the opponent the sampler chose. Every ply by either side becomes a transition from that side's own perspective (`selfplay.cut_transitions`, called once per color), and all of them enter replay. Q-learning is off-policy, so a move is valid training data whoever played it. Data volume stays identical across the 2×2 because every condition stores both sides, so the *only* differences are still the target and the opponent sampling.
+- **What the opponent's transitions mean in each cell:**
+  - **N:** the target doesn't depend on who moved, so the opponent's moves are plain extra data, as in AlphaZero-style training on both players' positions. Under the pool, the snapshots' moves are more off-policy data.
+  - **A-naive:** the opponent is the learner itself, so its transitions come from the same MDP.
+  - **A-pool:** the opponent's transitions have the *current learner* as their environment, not the pool.
+- **Consequence for H1/H4 (report it):** in A-pool, past snapshots are now the environment for about **25%** of all transitions: the learner's side, in the half of games played against a past snapshot. With learner-only data that share was 50%. The other 75% have the current network as their environment, and in A-naive that's 100%. So the A-row contrast between pool and naive is weaker than the 50/50 mix suggests, which works against finding H1/H4 effects. `pool_p_latest` stays at 0.5 (decided Nov 23). It's fixed before E1 and never changed after seeing results.
+- **Cost:** twice the transitions per game, so twice the gradient steps per game at a fixed `transitions_per_grad_step` (§4.8). Replay capacities are doubled so the buffer still spans ~10% of training (§4.5).
 
 **D3. Passes.**
 - **N:** action space = N² squares + 1 pass. Pass is legal **only** when no square is legal. A forced pass is a real transition, so the sign flips consistently.
@@ -259,22 +265,24 @@ Replay tuple: `(planes_s, a, r, planes_s', legal_mask_s', done)`. At sample time
 |---|---|---|---|
 | Training games | 30k | ~200k (set from measured throughput, ≤ 6 h/run) | ~500k placeholder (set at gate 1, ≤ 24 h/run) |
 | Parallel games | 128 | 256 | 256 |
-| Replay capacity | 50k transitions | 300k transitions | 1.5M transitions (≈ last 10% of training, as on 6×6; ~700 MB) |
+| Replay capacity | 100k transitions (~13 MB) | 600k transitions (~160 MB) | 3M transitions (≈ last 10% of training, as on 6×6; ~1.4 GB) |
 | Batch / optimizer | 256 / Adam 3e-4 | same | same |
-| Gradient steps | 1 per 16 new learner transitions (each sampled ≈ 16×) | same | same |
+| Gradient steps | 1 per 16 new transitions, both sides (each sampled ≈ 16×) | same | same |
 | Target net | Hard update every 1,000 gradient steps | same | same |
 | Exploration | ε linear 1.0 → 0.05 over first 20% of games, then 0.05 | same | same |
 | Loss / clipping | Huber, grad-norm clip 10 | same | same |
 | Eval + checkpoint every | 1k games (30 points) | 5k games (~40 points) | 10k games (~50 points) |
 | Seeds | 5 | 3 | 1 per arm |
-| Device | CPU | CPU or GPU (§4.8 compute) | GPU only (`--device mps` or `cuda`) |
+| Device | CPU | GPU (CPU-only exceeds 6 h/run, §4.8) | GPU only (`--device mps` or `cuda`) |
+
+Replay capacities were doubled on Nov 23, when D2 began storing both sides' moves. That keeps each buffer at ≈ 10% of training's transitions.
 
 ### 4.6 Training loop and opponent pool (`selfplay.py`, `pool.py`, `train.py`)
 
 - Run B games in parallel. Each ply, batch every position needing a given network into **one forward pass**.
-- The learner plays Black in half the games and White in the other half. Both sides play ε-greedy with the current ε. Only learner transitions are stored (D2).
-  - **N transition:** one learner ply, `s → s'` (opponent to move, possibly a forced-pass state).
-  - **A transition:** learner ply + the opponent's reply + any forced passes, `s → s'` (learner to move with a legal square, or terminal).
+- The learner plays Black in half the games and White in the other half. Both sides play ε-greedy with the current ε. **Both sides' transitions are stored, each from its own perspective (D2).** For "mover", read "whichever side the transition belongs to":
+  - **N transition:** one ply by the mover, `s → s'` (the other side to move, possibly a forced-pass state).
+  - **A transition:** the mover's ply + the other side's reply + any forced passes, `s → s'` (the mover to move again with a legal square, or terminal).
 - **Naive:** opponent = the current online network.
 - **Pool:** add a frozen copy every checkpoint interval (keep all). Each round, split the B games into 8 groups. Each group's opponent is the latest network with p = 0.5, otherwise one drawn uniformly from past snapshots. (MADRID uses checkpoints only *after* training, so it doesn't prescribe a training-time sampling rule. This 50/50 mix is a common default; if you want a cited rule, check how the TiZero paper, its ref. [29], samples its self-play opponents.)
 - Log one JSONL line per eval point: games, grad steps, wall time, ε, mean loss, mean max-Q, score vs each reference opponent (+ Wilson CI), self-play score (D5), 4×4 accuracy (+ Q-vs-solver MSE for N), 6×6 endgame accuracy.
@@ -325,17 +333,17 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 
 **Compute:** On Tue Nov 24, measure games/s and gradient steps/s on your laptop and server, then fix the 6×6 game budget so one run takes ≤ 6 h. Run as many seeds in parallel on the server as it has cores for (`tmux`), and `rsync` `runs/` back. **Fallback:** if the 12 E2 runs can't finish by Thu Dec 3, run 3 seeds for the A pair and 2 seeds for the N pair (10 runs).
 
-Measured Nov 19 on the laptop (M1 Pro): one Double-DQN gradient step at batch 256, with the §4.5 network.
+Measured Nov 19 on the laptop (M1 Pro): one Double-DQN gradient step at batch 256, with the §4.5 network. Steps per game and per-run times were recomputed Nov 23 for both sides' transitions (D2), which doubles both.
 
 | | CPU (8 threads) | GPU (`mps`) | Steps per game | Gradient steps alone, per run |
 |---|---|---|---|---|
-| 6×6, L = 4 | 104 ms | 7.6 ms | ≈ 1 | 200k games: ~5.8 h CPU / ~25 min GPU |
-| 8×8, L = 5 | 198 ms | 11.2 ms | ≈ 1.9 | 500k games: ~52 h CPU / ~3 h GPU |
+| 6×6, L = 4 | 104 ms | 7.6 ms | ≈ 2 | 200k games: ~11.6 h CPU / ~50 min GPU |
+| 8×8, L = 5 | 198 ms | 11.2 ms | ≈ 3.8 | 500k games: ~104 h CPU / ~6 h GPU |
 
-Self-play, inference, and evaluation come on top. **On CPU only, the 6×6 plan is already at its 6 h limit from gradient steps alone.** Runs that share cores with `--torch-threads 1` are slower still. Train on a GPU wherever one is available: the laptop's (`DEVICE=mps`) is 14–18× faster than its CPU on this network.
+Self-play, inference, and evaluation come on top. **On CPU only, gradient steps alone take ~11.6 h per 6×6 run, about twice the 6 h limit, so 6×6 needs a GPU.** If one isn't available for all 12 runs, set `transitions_per_grad_step: 32` for every condition. That restores ≈ 1 step per game, with each transition sampled ≈ 8× instead of 16×. Decide this at the Nov 24 throughput measurement, before E1. Runs that share cores with `--torch-threads 1` are slower still. Train on a GPU wherever one is available: the laptop's (`DEVICE=mps`) is 14–18× faster than its CPU on this network.
 
 **8×8 gates (D9).** 8×8 runs only if both gates pass. If either fails, 8×8 returns to Won't and nothing else in the plan changes.
-- **Gate 1 (Tue Nov 24, throughput):** measure 8×8 alongside 6×6, then set `games` in `configs/8x8.yaml` (and rescale `replay_capacity` to ≈ 10% of learner transitions). It passes if one 8×8 run of that budget fits in ≤ 24 h on hardware E2 doesn't need. A CPU-only setup fails.
+- **Gate 1 (Tue Nov 24, throughput):** measure 8×8 alongside 6×6, then set `games` in `configs/8x8.yaml` (and rescale `replay_capacity` to ≈ 10% of all transitions, both sides, D2). It passes if one 8×8 run of that budget fits in ≤ 24 h on hardware E2 doesn't need. A CPU-only setup fails.
 - **Gate 2 (Mon Nov 30, pilot review):** it passes if (a) the 6×6 pilots learned (≥ 50% vs positional, the §7 bar) and (b) P8 reached ≥ 50% vs positional on 8×8.
 - **Cutoffs:** results by Sun Dec 6 earn a slide; results by Mon Dec 14 go in the report; later results are dropped. 8×8 never takes compute from E2, and it never justifies a code change after M2.
 - **Scope:** score vs random/greedy/positional, self-play score (D5), and F9. No cross-play, regret, or endgame metrics on 8×8.
@@ -540,10 +548,10 @@ No new experiments in report week. Extra seeds may run in the background if they
 |---|---|---|
 | Sign/pass bug in N targets | 4×4 Q doesn't correlate with solver values | Target unit tests; debugging ladder; E0. If N still isn't right by Nov 25, launch the A runs anyway and finish N on Nov 30 (it's the contrast arm) |
 | DQN instability | Loss spikes, Q saturates at ±1 | Lower lr, more frequent target updates, confirm grad clipping; never per condition |
-| 6×6 too slow / 12 runs don't fit | Measured budget > 6 h/run or too few server cores (on CPU, gradient steps alone are ~5.8 h; §4.8) | Train on a GPU (`DEVICE=cuda`, or `mps` on the laptop), shrink the net to 32 channels, cut the game budget, use the §4.8 seed fallback |
+| 6×6 too slow / 12 runs don't fit | Measured budget > 6 h/run or too few server cores (on CPU, gradient steps alone are ~11.6 h with both sides stored; §4.8) | Train on a GPU (`DEVICE=cuda`, or `mps` on the laptop), shrink the net to 32 channels, cut the game budget, use the §4.8 seed fallback |
 | 8×8 too slow or not learning | Gate 1: > 24 h/run on spare hardware. Gate 2: P8 < 50% vs positional | Drop 8×8 to future work. Never delay E2, change code after M2, or borrow from Dec 7–9 for it |
 | 6×6 not learning by Dec 1 | Pilot score vs positional < 50% | 4×4 becomes the main result; present 6×6 as preliminary |
-| Pool ≈ naive everywhere | Overlapping seed bands in both rows | That's a result: lean on F3, F7, and the D1 framing (the replay buffer is already an implicit pool) |
+| Pool ≈ naive everywhere | Overlapping seed bands in both rows | That's a result: lean on F3, F7, and the D1 framing (the replay buffer is already an implicit pool). In the A row, also note the D2 dilution: only ~25% of A-pool transitions face a past snapshot |
 | Demo eats presentation time | Not playable by Dec 3 | Play view only for the talk; the rest moves to Dec 11–16 |
 | Server unavailable | — | Run on the laptop GPU (`mps`) overnight with a reduced 6×6 budget and the seed fallback. 8×8 is dropped, because E2 needs the laptop |
 
@@ -580,5 +588,6 @@ Abstract · 1 Introduction and question · 2 Background and related work (self-p
 ## 11. Open items
 
 - [x] Presentation: ~15 minutes. Report: 4–6 pages in a single-column conference template (IEEE, NeurIPS, ICLR, or equivalent). Figures count toward the pages, references and the appendix don't; the limit is soft but no filler or oversized figures (Nov 19).
-- [ ] Server specs: CPU cores, GPU? These decide whether all 12 E2 runs fit and whether 8×8 can run beside them (Nov 24). A GPU matters for 6×6 too: on CPU, the 6×6 plan is already at its 6 h/run limit (§4.8, measured Nov 19).
+- [ ] Server specs: CPU cores, GPU? These decide whether all 12 E2 runs fit and whether 8×8 can run beside them (Nov 24). A GPU matters for 6×6 too: on CPU, gradient steps alone take ~11.6 h per 6×6 run with both sides stored, about twice the 6 h/run limit (§4.8). Without enough GPU, use the `transitions_per_grad_step: 32` fallback.
 - [x] Demo URL: `othello.johnnygoodlad.dev` (portfolio is a project site with a custom domain; §5.5).
+- [x] Opponent transitions: the instructor asked for the opponent's moves to be included in training. D2 was revised on Nov 23 to store both sides' moves in all four conditions. `pool_p_latest` stays at 0.5, and the resulting A-pool dilution (~25% past-snapshot environment) goes in the report (D2).

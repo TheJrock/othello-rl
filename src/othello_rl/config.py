@@ -46,7 +46,7 @@ class Config:
     # --- self-play and replay
     games: int = 30_000
     parallel_games: int = 128
-    replay_capacity: int = 50_000
+    replay_capacity: int = 100_000  # both sides' transitions are stored (spec D2)
     augment: bool = True  # random D4 transform per sampled transition
 
     # --- optimisation
