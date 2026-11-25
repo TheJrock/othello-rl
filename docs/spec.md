@@ -141,6 +141,7 @@ othello-rl/
 │   ├── build_data.py          # solve 4×4; build openings / endgame / regret / teaching sets
 │   ├── sweep.py               # launch the 2×2×seeds grid as parallel processes
 │   ├── analyze.py             # runs/ → figures/ + tables/
+│   ├── watch.py               # live progress bars for running experiments (read-only; `make watch`)
 │   └── export_demo.py         # chosen run → web/public/
 ├── tests/
 │   ├── conftest.py            # NotImplementedError → "skipped: TODO" until Dec 1, so CI stays green
@@ -450,7 +451,7 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 - **Other logged differences.** Pool learners score 0.53–0.55 in training games, because they beat older snapshots. A-pool's loss is 0.032 vs A-naive's 0.024: more varied opponents make A's targets noisier. N's loss is 0.003.
 - **The runs' `meta.json` says `dirty: true`.** Only `docs/spec.md` was uncommitted at launch; the code is commit 091c38e.
 
-**Compute:** On Tue Nov 24, measure games/s and gradient steps/s on your laptop and server, then fix the 6×6 game budget so one run takes ≤ 6 h. ~~Run as many seeds in parallel on the server as it has cores for (`tmux`), and `rsync` `runs/` back.~~ *Revised Nov 24: the server is too small (below), so every 6×6/8×8 run goes on the laptop GPU, four at a time (`JOBS=4`; `DEVICE` defaults to `mps` on macOS). Keep the laptop plugged in and awake: run sweeps under `caffeinate -i`, inside `tmux` so closing the terminal doesn't kill them, with the lid open.* **Fallback:** if the 12 E2 runs can't finish by Thu Dec 3, run 3 seeds for the A pair and 2 seeds for the N pair (10 runs).
+**Compute:** On Tue Nov 24, measure games/s and gradient steps/s on your laptop and server, then fix the 6×6 game budget so one run takes ≤ 6 h. ~~Run as many seeds in parallel on the server as it has cores for (`tmux`), and `rsync` `runs/` back.~~ *Revised Nov 24: the server is too small (below), so every 6×6/8×8 run goes on the laptop GPU, four at a time (`JOBS=4`; `DEVICE` defaults to `mps` on macOS). Keep the laptop plugged in and awake: run sweeps under `caffeinate -i`, inside `tmux` so closing the terminal doesn't kill them, with the lid open. Watch them with `make watch` (Nov 25): one bar per run, games out of its fixed budget, the latest score vs positional (accuracy on 4×4) and vs the previous checkpoint, an ETA, and flags for stalled or failed runs. Bars move at eval points.* **Fallback:** if the 12 E2 runs can't finish by Thu Dec 3, run 3 seeds for the A pair and 2 seeds for the N pair (10 runs).
 
 Measured Nov 19 on the laptop (M1 Pro): one Double-DQN gradient step at batch 256, with the §4.5 network. Steps per game and per-run times were recomputed Nov 23 for both sides' transitions (D2), which doubles both.
 
@@ -645,6 +646,7 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 **Mon Nov 30** (~4 h)
 - [ ] Review E1 and the pilots. If 6×6 isn't learning, change at most 2 shared knobs (lr, budget, ε schedule), the same for all four conditions.
 - [ ] Set E2's budget from the pilot curves: 200k if they've plateaued by then, up to 400k if still rising. Rescale `replay_capacity` and `eval_every` with it (§4.5 budget rule).
+- [ ] *(Before the Dec 1 code freeze, optional)* Smooth progress bars: have `train.py` overwrite a one-line `progress.json` in the run directory every round (games, wall time). `scripts/watch.py` then reads it when present, so bars move every round instead of only at eval points. The run's results don't change. *(Noted Nov 25, when the watcher was built.)*
 - [ ] **8×8 gate 2** (§4.8): go/no-go on E6. If go, set E6's budget (≤ 1M) from P8's curve and rescale likewise.
 - [x] 6×6 endgame solver + 500-position test set, cached. Then set `endgame_set: data/endgame6.jsonl` in `configs/6x6.yaml` again (before E2), and backfill the pilots' endgame accuracy from their checkpoints. *(Done Nov 24, §4.4, and `endgame_set` restored. Still to do: backfill the pilots once they finish.)*
 
