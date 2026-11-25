@@ -63,7 +63,7 @@ The proposal's MDP row ("opponent's policy is part of the environment") describe
   - The replayed transitions were generated under *older opponents*, i.e. a different transition function (the proposal's Lectures 14–15 connection). Transitions are stochastic whenever the opponent is (ε-greedy or sampled from a pool).
 - **N — Negamax.** `s'` is the opponent's turn, and the target is `−max_a' Q(s', a')`. Your own network stands in for the opponent's best reply, so the target is the game's minimax value whatever the real opponent does. The pool only changes *which positions reach the replay buffer*. The non-stationarity is the shifting state distribution plus bootstrapping from a moving network.
 - **Prediction (H4):** the pool helps A more than N. The literature leans this way: AlphaGo's policy-gradient stage sampled past opponents, while AlphaZero's minimax-style value targets used only the latest network. On small Othello boards (fairly transitive games) the effect may be small. Either outcome is reportable.
-- **Note for the analysis:** under A-naive, the replay buffer already holds transitions from recent past selves, so the buffer acts as an *implicit short-window pool*. With 600k transitions on 6×6 (both sides' moves, D2), that is roughly the last ~10% of training. Report this; never tune buffer size per condition.
+- **Note for the analysis:** under A-naive, the replay buffer already holds transitions from recent past selves, so the buffer acts as an *implicit short-window pool*. With 1.28M transitions on 6×6 at the 400k-game pilot budget (both sides' moves, D2), that is roughly the last ~10% of training. Report this; never tune buffer size per condition. *(Nov 24: on 4×4, keeping all the data instead of the last ~27% (100k of ~370k transitions) adds ~3 points of accuracy and removes a post-peak decline under both targets, §4.8 E1 results.)*
 - **If you could only run one,** run A. It is the formulation where the pool's mechanism actually operates, and it matches the proposal's MDP and course connection.
 
 **D2. Store both sides' moves, in all four conditions.** *(Revised Nov 23 at the instructor's direction. It was "learner's moves only".)* In each game, one side is "the learner" (the current network: Black in half the games, White in the other half). The other side is the opponent the sampler chose. Every ply by either side becomes a transition from that side's own perspective (`selfplay.cut_transitions`, called once per color), and all of them enter replay. Q-learning is off-policy, so a move is valid training data whoever played it. Data volume stays identical across the 2×2 because every condition stores both sides, so the *only* differences are still the target and the opponent sampling.
@@ -158,7 +158,7 @@ othello-rl/
 │   ├── src/{main.ts, engine.ts, agent.ts, ui/…}     # engine.ts mirrors engine.py's API names
 │   ├── public/{models/*.onnx, data/*.json}         # written by export_demo.py, committed
 │   └── tests/{engine.parity.test.ts, model.parity.test.ts, fixtures/}
-├── report/                    # main.tex (NeurIPS 2025 style) + references.bib; `make report`
+├── report/                    # main.tex (NeurIPS 2025 style) + references.bib; `make report`; notes.md (running list of findings to write up)
 └── .github/workflows/
     ├── tests.yml              # pytest + vitest on push
     └── pages.yml              # build web/ and deploy to GitHub Pages
@@ -275,7 +275,7 @@ Replay tuple: `(planes_s, a, r, planes_s', legal_mask_s', done)`. At sample time
 | Seeds | 5 | 3 | 1 per arm |
 | Device | GPU (`mps`) where available: ~2–5 min/run; a CPU gradient step is ~50 ms even here (§4.8) | GPU (CPU-only exceeds 6 h/run, §4.8) | GPU only (`--device mps` or `cuda`) |
 
-Replay capacities were doubled on Nov 23, when D2 began storing both sides' moves. That keeps each buffer at ≈ 10% of training's transitions.
+Replay capacities were doubled on Nov 23, when D2 began storing both sides' moves. That keeps the 6×6 and 8×8 buffers at ≈ 10% of training's transitions. *(Correction, Nov 24: 4×4 games average ~12.4 plies, so a 30k-game run has ~370k transitions, and its 100k buffer holds ~27%, not 10%. E1 ran with this. Keeping all of them helps, §4.8 E1 results.)*
 
 **Budget rule (Nov 24).** When a 6×6 or 8×8 budget changes, rescale the other two settings with it. Keep `replay_capacity` ≈ 10% of training's transitions (games × 32 on 6×6, × 60 on 8×8) and `eval_every` ≈ games / 40 on 6×6 or / 50 on 8×8. That keeps the buffer's reach and the pool's snapshot count the same at any budget. For example, E2 at 200k games means `replay_capacity: 640000` and `eval_every: 5000`.
 
@@ -399,7 +399,7 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 | E2 | 6×6 2×2 | 4 × 3 seeds = 12 | Launch Dec 1 on the laptop GPU, 4 at a time: ~8½ h at 200k games, ~16½ h at 400k |
 | E3 | Cross-play matrices | — | Dec 1 (4×4) / Dec 4 (6×6) |
 | E5 | Checkpoint regret (self-history + held-out; + true regret on 4×4) | — | Dec 2 (4×4) / Dec 4 (6×6) |
-| E4 | *(Could)* A-naive replay-buffer ablation (¼ size), or pool mix 80/20 | 3 seeds | Only with spare compute |
+| E4 | *(Could)* ~~A-naive replay-buffer ablation (¼ size)~~ Replay-buffer size, or pool mix 80/20. *4×4 part done Nov 24 (`make replay-4x4`): a buffer that keeps every transition removes E1's post-peak decline (results below). A 6×6 version, if any, waits for the pilots* | 3 seeds | Only with spare compute |
 | P8 | *(Could)* 8×8 pilot: A-naive, 1M games (`make pilot-8x8`) | 1 | Launch Nov 25 alongside P (gate 1 passed Nov 24); ~1 day |
 | E6 | *(Could)* 8×8 A pair: A-naive vs A-pool on the frozen code (`make sweep-8x8`) | 2 × 1 seed | Launch Dec 1 (Dec 2 at the latest), only if gate 2 passed |
 | E7 | *(Could)* Settings comparison: rerun with the pre-Nov-24 settings (`eps_end` 0.05, `target_update_every` 1,000) on the same code, compared with E1 / P. 4×4: `make sweep-4x4-old` (all 4 conditions × 5 seeds, ~5 min per run on `mps`). 6×6: `make pilot-6x6-old` (1 seed per condition, GPU hours) | 20 (4×4) + 4 (6×6) | 4×4 any time after E1 launches; 6×6 only with spare compute, never ahead of E2 |
@@ -415,8 +415,24 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 
 - **Target: N beats A.** +2.7 points of accuracy (10 runs per side, Welch p ≈ 4·10⁻¹⁰) and +0.04 Q corr. Every N seed beats every A seed. Scores vs the references barely differ, except vs greedy (+1 point, p ≈ 0.01).
 - **Sampling: no effect on 4×4 (H1 null here).** Pool vs naive: +0.2 points of accuracy (p = 0.78), +0.01 Q corr (p = 0.32). Pool is +1.1 points vs positional (p = 0.04), but that's one of five metrics tested, so not evidence on its own. This matches rung 4: pool widens coverage but doesn't buy accuracy on 4×4.
-- **Accuracy peaks mid-run, then declines (H2-relevant).** Accuracy peaks at 8k–12k games and is lower by 30k: −2.3 points in all 10 N runs, −1.3 in all 5 A-naive runs, and ~0 for A-pool (mixed signs, from a lower peak). The timing matches ε reaching its floor (6k games), with the 100k buffer (~8k games of data) flushing out the last high-ε transitions by ~14k. *That mechanism is a hypothesis, not tested.* A cheap test is N-naive with `replay_capacity` 400k (keeps all ~370k transitions), or with `eps_decay_frac` 1.0.
+- **Accuracy peaks mid-run, then declines (H2-relevant).** Accuracy peaks at 8k–12k games and is lower by 30k: −2.3 points in all 10 N runs, −1.3 in all 5 A-naive runs, and ~0 for A-pool (mixed signs, from a lower peak). The timing matches ε reaching its floor (6k games), with the 100k buffer (~8k games of data) flushing out the last high-ε transitions by ~14k.
   - Pool doesn't remove the drop under N. So on 4×4, "drawdown after peak" happens under both samplers.
+  - **Tested Nov 24: the buffer causes it** (`make replay-4x4`, `runs/check-replay400k/`). A-naive and N-naive were rerun on seeds 0–1 with `replay_capacity` 400k, which keeps all ~355–380k transitions.
+
+    | Last 10 eval points | A-naive, 100k (E1) | A-naive, 400k | N-naive, 100k (E1) | N-naive, 400k |
+    |---|---|---|---|---|
+    | Accuracy | 75.5% | 78.3% | 78.4% | 81.5% |
+    | Change from games 8k–12k | −1.7 | +0.7 | −2.4 | +0.4 |
+    | Q corr | 0.430 | 0.457 | 0.468 | 0.530 |
+    | Score vs positional | .581 | .607 | .592 | .610 |
+
+    - The decline is gone in all 4 runs, and late accuracy is +2.8 (A) and +3.1 (N) points higher.
+    - The curves are identical to E1's until game 8k, when E1's buffer fills. That's expected with the same seeds, and it doubles as a determinism check on `mps`.
+    - Loss is ~2× higher with the big buffer (A 0.050 vs 0.023, N 0.0068 vs 0.0029): older, more varied data is harder to fit, and fitting it helps.
+    - So the cause is flushing out older data (high-ε, from earlier policies), not ε itself.
+- **On 4×4, buffer size matters more than the pool.** Keeping all the data adds ~3 points, as much as the choice of target (+2.7) and far more than pool vs naive (+0.2). This fits D1's note that the buffer is an *implicit pool* of recent past selves. Lengthening that window on the data side helps, while the explicit opponent pool doesn't. The current buffers stay for P (and E1 stands as run), the same for every condition (D1: never tune buffer size per condition). Whether to raise the 6×6 buffer for E2 is a shared-knob decision at the Nov 30 review, once the 6×6 pilots show whether they decline too. Their buffer is a *smaller* share of training than 4×4's (~10% vs ~27%), so if the flush matters, it should matter at least as much there. Memory allows it: a 6×6 buffer of all 400k games' ~12.8M transitions is ~3.4 GB per run, on a 32 GB laptop.
+- **H3 on 4×4: the self-play score doesn't see the decline.** The score vs the previous checkpoint is above 0.5 only in the first ~4k games (0.60–0.66 at 1k). From 6k games on it stays at 0.47–0.54 in every run, including through the 2.3-point decline. Its per-run Spearman ρ with accuracy averages −0.2 to −0.3, and with score vs positional −0.14 to −0.24, far from H3's ρ > 0.7. Consecutive checkpoints differ too little (~0.1 point of accuracy per interval) for a match to see. Whether earlier checkpoints beat the final one in play is E3's question.
+- **Match scores are much coarser than exact accuracy.** N vs A is +2.7 points of accuracy (p ≈ 4·10⁻¹⁰), while score vs random is identical (0.73 in both rows). A 240-game match's interval is ~±6 points. On 6×6, without an exact metric, small effects will need the seeds to show.
 - **Implication for the pilots and E2.** The same shape may appear on 6×6: ε reaches its floor at 80k games, and the buffer holds ~40k games. So when setting E2's budget, read the pilot curves for a peak, not only a plateau. Also, `eps_decay_frac` and the replay rule scale with `games`. A 200k E2 run reaches ε's floor at 40k, not at the pilot's 80k, so the pilot curve at 200k only approximates a 200k run.
 - **Other logged differences.** Pool learners score 0.53–0.55 in training games, because they beat older snapshots. A-pool's loss is 0.032 vs A-naive's 0.024: more varied opponents make A's targets noisier. N's loss is 0.003.
 - **The runs' `meta.json` says `dirty: true`.** Only `docs/spec.md` was uncommitted at launch; the code is commit 091c38e.

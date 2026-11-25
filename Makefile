@@ -10,7 +10,7 @@ SERVER ?=
 SERVER_DIR ?= othello-rl
 RUN ?=
 
-.PHONY: help setup test test-py test-web data ladder sweep-4x4 sweep-4x4-old pilot-6x6 pilot-6x6-old sweep-6x6 pilot-8x8 sweep-8x8 sync figures report demo web-dev
+.PHONY: help setup test test-py test-web data ladder sweep-4x4 sweep-4x4-old replay-4x4 pilot-6x6 pilot-6x6-old sweep-6x6 pilot-8x8 sweep-8x8 sync figures report demo web-dev
 
 help:  ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -55,6 +55,10 @@ OLD_KNOBS = --eps-end 0.05 --target-update-every 1000
 
 sweep-4x4-old:  ## E7: E1 with the pre-Nov-24 settings (eps_end 0.05, target_update_every 1000)
 	$(PY) scripts/sweep.py --config configs/4x4.yaml --exp e7-4x4-old --seeds 0 1 2 3 4 --jobs $(JOBS) -- --device $(DEVICE) $(OLD_KNOBS)
+
+# E4 (spec §4.8): replay buffer size. 400k transitions keeps all of a 4x4 run's ~370k (E1 keeps 100k)
+replay-4x4:  ## E4: 4x4 naive runs whose buffer keeps every transition (vs E1's 100k)
+	$(PY) scripts/sweep.py --config configs/4x4.yaml --exp check-replay400k --samplings naive --seeds 0 1 --jobs $(JOBS) -- --device $(DEVICE) --replay-capacity 400000
 
 pilot-6x6:  ## P: 6x6, 2x2 conditions x 1 seed, 400k games (sets the E2 budget, spec §4.8)
 	$(PY) scripts/sweep.py --config configs/6x6.yaml --exp pilot-6x6 --seeds 0 --jobs $(JOBS) -- --device $(DEVICE)
