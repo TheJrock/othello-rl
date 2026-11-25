@@ -79,8 +79,12 @@ sync:  ## copy runs/ back from the server: make sync SERVER=user@host
 	@test -n "$(SERVER)" || (echo "usage: make sync SERVER=user@host [SERVER_DIR=othello-rl]"; exit 1)
 	rsync -av $(SERVER):$(SERVER_DIR)/runs/ runs/
 
-figures:  ## runs/ -> figures/ and tables/
-	$(PY) scripts/analyze.py --exp e1-4x4 e2-6x6
+# Experiments to draw. In-progress ones work too, e.g. `make figures EXPS=pilot-6x6`, but commit
+# figures/ and tables/ only for finished experiments (the report includes them by path).
+EXPS ?= e1-4x4 e2-6x6
+
+figures:  ## runs/ -> figures/ and tables/ (EXPS=... to choose experiments)
+	$(PY) scripts/analyze.py --exp $(EXPS)
 
 report:  ## build report/main.pdf (needs tectonic: `brew install tectonic`, or latexmk from MacTeX)
 	cd report && if command -v tectonic >/dev/null; then tectonic main.tex; else latexmk -pdf main.tex; fi

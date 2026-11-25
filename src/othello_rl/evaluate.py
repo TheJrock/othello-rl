@@ -274,8 +274,41 @@ def crossplay_matrix(
     raise NotImplementedError("evaluate.crossplay_matrix")
 
 
-def summarize_run(rows: Sequence[dict[str, Any]], key: str = "score_positional") -> dict[str, float]:
-    """Per-run summary numbers (spec §4.7): final (mean of the last 3 eval points), peak, max_drawdown
-    (largest drop below the running max after the peak), forgetting_events (drops > 0.10 below the
-    running max), spearman (score_selfplay vs `key`)."""
-    raise NotImplementedError("evaluate.summarize_run")
+def summarize_run(
+    rows: Sequence[dict[str, Any]], key: str = "score_positional", threshold: float = 0.10
+) -> dict[str, float]:
+    """Per-run summary numbers (spec §4.7) for the metric `key` over a run's log rows:
+
+    final              mean of the last 3 eval points
+    peak, peak_games   the best value and where it came (the first time, if tied)
+    max_drawdown       peak minus the lowest value at or after the peak (≥ 0)
+    forgetting_events  times the value falls more than `threshold` below its running max (each
+                       entry into that state counts once; recovering and falling again counts again)
+    spearman           Spearman ρ between score_selfplay and `key` over the eval points that have
+                       both (not game 0); NaN if either is constant or there are fewer than 3
+
+    Rows without `key` are skipped, so this also works on a run that is still going."""
+    from scipy.stats import spearmanr  # here, not at the top: training imports this module
+
+    points = [(r["games"], r[key]) for r in rows if key in r]
+    if not points:
+        raise ValueError(f"no rows with {key!r}")
+    games = np.array([g for g, _ in points])
+    v = np.array([x for _, x in points], dtype=float)
+    i_peak = int(np.argmax(v))
+    running = np.maximum.accumulate(v)
+    below = v < running - threshold
+    entries = int(below[0]) + int(np.sum(below[1:] & ~below[:-1]))
+
+    pairs = np.array([(r["score_selfplay"], r[key]) for r in rows if key in r and "score_selfplay" in r])
+    rho = float("nan")
+    if len(pairs) >= 3 and pairs[:, 0].std() > 0 and pairs[:, 1].std() > 0:
+        rho = float(spearmanr(pairs[:, 0], pairs[:, 1]).statistic)
+    return {
+        "final": float(v[-3:].mean()),
+        "peak": float(v[i_peak]),
+        "peak_games": int(games[i_peak]),
+        "max_drawdown": float(v[i_peak] - v[i_peak:].min()),
+        "forgetting_events": entries,
+        "spearman": rho,
+    }

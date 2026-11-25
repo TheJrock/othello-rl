@@ -62,6 +62,12 @@ The full details and numbers live in `docs/spec.md` (section refs in brackets).
 - First readings on the 6×6 pilot checkpoints: untrained 46%, 72–77% at 10k games, ~78–79% at 20k. Plenty of headroom.
 - The exact solver turned out cheap (~0.1 s per 12-empty position, in plain Python). Deeper endgames (14–16 empties) would be feasible if a harder set is ever wanted.
 
+### E1's summary table (T1, `tables/e1-4x4/`)
+- **H4 on 4×4 is exactly null:** env gap − negamax gap is +0.000 ± 0.005 in final accuracy. Pool − naive is +0.004 under both targets.
+- **No forgetting events at the 10-point threshold in any of the 20 runs.** The post-peak decline is real but only ~3 points (max drawdown 0.026–0.038). If forgetting matters on 4×4, a smaller threshold would be needed, but don't change the definition after seeing the data. Just report that the threshold doesn't fire on 4×4.
+- **Spearman ρ between the self-play score and accuracy is negative in every condition** (−0.16 to −0.31). Clear H3 support: the self-play score doesn't track strength.
+- **Caveat:** "peak" and "max drawdown" are biased upward by eval noise, since the peak is the max of noisy points. The seed bands in F1 show how big that noise is.
+
 ### Settings change (Nov 24)
 - Changed `eps_end` 0.05 → 0.1 and `target_update_every` 1000 → 250 on all boards, after the ladder rerun.
   - Why the target update mattered: with γ = 1, a value moves back about one decision per target-net update, and a 4×4 run had only ~11–23 updates at 1,000. It now has ~92.

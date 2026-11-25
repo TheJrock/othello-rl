@@ -379,6 +379,12 @@ So "≥ 95% vs random" can only apply from the start position. On the 4×4 bank 
   - *Revised Nov 23 (was 2 plies on 4×4, 4 plies on 6×6/8×8).* Shallower banks have too few genuinely different openings. Mirror images and rotations of an opening are the same opening to a symmetric player, and a net trained with D4 augmentation is close to one. At 2 plies, 4×4 has 12 positions but only 3 up to symmetry, and its 24-game matches gave ±20-point intervals. At 4 plies, 6×6 and 8×8 have 236 positions (60 up to symmetry), and a 100-position sample held only 49 different ones. The revised banks hold 31 (4×4) and 97–99 (6×6/8×8) different openings. The cost is more random moves before the agents take over, which is harmless: every opening is played from both sides, so a lopsided opening favors each player once.
 - **Score** = (wins + 0.5·draws) / games, with a 95% Wilson interval.
 - **Per-run summary:** final score (mean of last 3 eval points) · peak · max drawdown after the peak · forgetting events (drops > 10 points below the running max) · Spearman ρ between self-play score and score vs positional.
+  - *Implemented Nov 24* (`evaluate.summarize_run`, tested on hand-computed curves).
+    - **Max drawdown:** the peak minus the lowest value at or after it.
+    - **Forgetting event:** each time the value falls strictly more than 10 points below its running max. A stretch spent below counts once; recovering and falling again counts again.
+    - **Spearman ρ:** over the eval points that have a self-play score, so not game 0.
+    - **On 4×4 the metric is `accuracy_4x4`, not score vs positional.**
+    - **Caveats for the report:** with noisy evals, "peak" is biased upward (it's the max of noisy points), so "max drawdown" is too. And a 10-point threshold never fires on 4×4 accuracy, which moves by ~3 points after the peak (E1: 0 events in all 20 runs).
 - **Cross-play matrix:** 15 evenly spaced checkpoints per run, round robin over the opening bank.
 
 **Position-level checkpoint regret (adapted from MADRID, Samvelyan et al. 2024)**
@@ -500,6 +506,17 @@ Self-play, inference, and evaluation come on top. **On CPU only, gradient steps 
 | T1 | Summary table: §4.7 numbers, mean ± std across seeds, with the (pool − naive) gap per target type (H4) | slides, report |
 | F9 | *(Could, E6)* 8×8: score vs positional and self-play score, A-naive vs A-pool, one seed each (F2/F3 layout, same code) | report; slides if done by Dec 6 |
 | F10 | *(Could, E7)* 4×4 accuracy vs games (F1 layout), old vs new settings, per condition with seed bands. Does faster value propagation help every condition equally, or does it change the naive-vs-pool gap? | report (discussion or appendix) |
+
+*Implemented Nov 24 (`scripts/analyze.py`, `make figures`; `EXPS=...` picks experiments): F1, F2 (+ `f2_scores_appendix.pdf` with random and greedy), F3, F5, T1.* F4, F7 and F8 wait for `crossplay_matrix` and `regret.py`. Conventions:
+- **Layout:** two panels, env | negamax, colour = sampler. Curves are the mean over seeds, with a band spanning the lowest to highest seed. Only eval points every seed has reached are used, so a run still in progress shortens its curve rather than skewing it.
+- **T1 cutoff:** every run is cut at the shortest run's last eval point, and the table note says so.
+- **Reference lines** (chance, even score) are dotted and labelled.
+- **F3:** solid = external metric (accuracy on 4×4), dashed = score vs the previous checkpoint.
+- **Style:** the dataviz skill's reference palette, slots 1–2. It passes the colour-blind and contrast checks on white: CVD ΔE 24.7, normal-vision ΔE 33.6, and both colours ≥ 3:1 against the page.
+- **Size:** 5.5 in × 1.6–1.7 in.
+- **T1 outputs:** a bare booktabs tabular with the report's condition macros, plus a plain-text copy (`t1_summary.txt`). Condition rows are mean ± sd over seeds; gap rows (pool − naive per target, and H4 = env gap − negamax gap) are difference of means ± SE.
+- **Commit `figures/` and `tables/` only for finished experiments.**
+- **Tests:** `tests/test_analyze.py` and `tests/test_evaluate.py`. Nine planted bugs (drawdown window, event counting, threshold strictness, final, curve alignment, gap and H4 signs, the T1 cutoff, std from one seed) were all caught.
 
 ---
 
@@ -634,7 +651,7 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 **Tue Dec 1** (~4 h) — **M2: experiment code freeze**
 - [ ] Launch **E2** (6×6 2×2, 12 runs, endgame accuracy in eval): `caffeinate -i make sweep-6x6` on the laptop GPU, four at a time in three batches, ~8½ h at 200k or ~16½ h at 400k.
 - [ ] If gate 2 passed: launch **E6** (8×8 A pair) ~~on hardware E2 doesn't use~~ on the laptop GPU once E2 has finished (`make sweep-8x8`), on Dec 2 at the latest.
-- [ ] Analysis scripts: seed-band curves, §4.7 summary numbers, Spearman ρ, H4 gap.
+- [x] Analysis scripts: seed-band curves, §4.7 summary numbers, Spearman ρ, H4 gap. *(Done Nov 24, §4.9: F1, F2, F3, F5, T1. E1's F1, F3 and T1 are in `figures/e1-4x4/` and `tables/e1-4x4/`.)*
 - [ ] Cross-play script; run E3 on 4×4.
 
 **Wed Dec 2** (~4–5 h)

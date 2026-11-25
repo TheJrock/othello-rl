@@ -24,6 +24,7 @@ from othello_rl.evaluate import (
     reference_players,
     save_states,
     solver_values,
+    summarize_run,
     wilson_interval,
 )
 from othello_rl.players import NetPlayer, RandomPlayer
@@ -296,3 +297,50 @@ def test_evaluate_checkpoint_logs_endgame_accuracy(endgame_records, rng):
     row = evaluate_checkpoint(build_net(cfg), None, cfg, ctx, rng)
     assert 0.0 <= row["endgame_accuracy"] <= 1.0
     assert "accuracy_4x4" not in row
+
+
+# --- per-run summary (spec §4.7, T1) --------------------------------------------------------------
+
+
+def _rows(values, selfplay=None):
+    rows = []
+    for i, v in enumerate(values):
+        row = {"games": 1000 * i, "score_positional": v}
+        if i and selfplay is not None:
+            row["score_selfplay"] = selfplay[i]
+        rows.append(row)
+    return rows
+
+
+def test_summarize_run_numbers():
+    #        running max: 0.2  0.5  0.8  0.8  0.85 0.85 0.85
+    values = [0.2, 0.5, 0.8, 0.6, 0.85, 0.7, 0.72]
+    s = summarize_run(_rows(values))
+    assert s["final"] == pytest.approx((0.85 + 0.7 + 0.72) / 3)
+    assert (s["peak"], s["peak_games"]) == (0.85, 4000)
+    assert s["max_drawdown"] == pytest.approx(0.15)  # 0.85 → 0.7, after the peak only
+    assert s["forgetting_events"] == 2  # 0.6 (< 0.8 − 0.1), then 0.7 and 0.72 (< 0.85 − 0.1) as one event
+    assert np.isnan(s["spearman"])  # no self-play scores in these rows
+
+
+def test_summarize_run_forgetting_threshold_is_strict():
+    assert summarize_run(_rows([0.5, 0.9, 0.8]))["forgetting_events"] == 0  # exactly 10 points: not a drop
+    assert summarize_run(_rows([0.5, 0.9, 0.79]))["forgetting_events"] == 1
+
+
+def test_summarize_run_spearman_skips_game_0_and_flags_constants():
+    values = [0.1, 0.3, 0.5, 0.4, 0.7]
+    assert summarize_run(_rows(values, selfplay=[None, 0.6, 0.7, 0.65, 0.8]))["spearman"] == pytest.approx(
+        1.0
+    )
+    assert summarize_run(_rows(values, selfplay=[None, 0.8, 0.7, 0.75, 0.6]))["spearman"] == pytest.approx(
+        -1.0
+    )
+    assert np.isnan(summarize_run(_rows(values, selfplay=[None, 0.5, 0.5, 0.5, 0.5]))["spearman"])
+
+
+def test_summarize_run_other_keys_and_missing_rows():
+    rows = [{"games": 0, "accuracy_4x4": 0.5}, {"games": 1000}, {"games": 2000, "accuracy_4x4": 0.8}]
+    assert summarize_run(rows, key="accuracy_4x4")["peak"] == 0.8
+    with pytest.raises(ValueError):
+        summarize_run(rows, key="endgame_accuracy")
