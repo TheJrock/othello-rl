@@ -395,7 +395,7 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 |---|---|---|---|
 | E0 | 4×4 supervised sanity check: fit the net to exact solver values (separates RL bugs from capacity issues) | 1 | Nov 24, only if stuck |
 | E1 | 4×4 2×2 | 4 × 5 seeds = 20 (minutes each) | ~~Launch Nov 25~~ Done Nov 24: 20/20 runs in 26 min (results below) |
-| P | 6×6 pilots, 400k games (their curves set E2's budget) | 4 × 1 seed | Launch Nov 25 on the laptop GPU (~6–7 h sharing it with P8) |
+| P | 6×6 pilots, 400k games (their curves set E2's budget) | 4 × 1 seed | Launch Nov 25 on the laptop GPU (~6–7 h sharing it with P8). No endgame accuracy during training: it's backfilled from their checkpoints once the set exists |
 | E2 | 6×6 2×2 | 4 × 3 seeds = 12 | Launch Dec 1 on the laptop GPU, 4 at a time: ~8½ h at 200k games, ~16½ h at 400k |
 | E3 | Cross-play matrices | — | Dec 1 (4×4) / Dec 4 (6×6) |
 | E5 | Checkpoint regret (self-history + held-out; + true regret on 4×4) | — | Dec 2 (4×4) / Dec 4 (6×6) |
@@ -607,7 +607,7 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 **Wed Nov 25** (~4 h) — **M1**
 - [x] Opponent pool, checkpointing, YAML configs, run directories with commit hash. *(Done Nov 24, a day early: checkpointing, configs and run directories with `train.py`, then `pool.PoolSampler`. Ladder rung 4 passed, §4.6. E1 and the pilots are ready to launch.)*
 - [x] Launch **E1** (4×4 2×2, 20 runs): `caffeinate -i make sweep-4x4` in `tmux`, four at a time on the laptop GPU, ~30 min. *(Done Nov 24, a day early: 20/20 in 26 min. Results in §4.8: N > A clearly, pool ≈ naive, and accuracy peaks at ~10k games before declining.)*
-- [ ] Launch **6×6 pilots** (4 runs, 400k games) ~~on the server before leaving for the holiday~~ on the laptop GPU after E1: `caffeinate -i make pilot-6x6` (*Nov 24: the server is too slow, §4.8. The user is home for the holiday, and the laptop can run day and night*). ~6–7 h sharing the GPU with P8.
+- [ ] Launch **6×6 pilots** (4 runs, 400k games) ~~on the server before leaving for the holiday~~ on the laptop GPU after E1: `caffeinate -i make pilot-6x6` (*Nov 24: the server is too slow, §4.8. The user is home for the holiday, and the laptop can run day and night*). ~6–7 h sharing the GPU with P8. *(Nov 24: the first launch died at start-up, because `configs/6x6.yaml` named `data/endgame6.jsonl`, which isn't built until Nov 30, and `evaluate.endgame_accuracy` is still a stub. `endgame_set` is now `null` until then. `tests/test_infra.py::test_shipped_configs_can_start_a_run` checks every shipped config's data files and metrics, and a 1k-game 6×6 run passed. P8 was unaffected.)*
 - [ ] If gate 1 passed (it did, Nov 24): launch the **8×8 pilot** P8 (1M games) ~~on hardware the 6×6 pilots don't use~~ on the laptop GPU alongside the 6×6 pilots: `caffeinate -i make pilot-8x8` in a second `tmux` window (*Nov 24: there is no second GPU, and the pilots aren't E2, so sharing is fine*). ~1 day.
 - [ ] *(optional)* On the server: E7's 4×4 half. Do it after `git pull` of the code E1 ran, so both use the same code. Run `.venv/bin/python scripts/build_data.py solve4x4`, then `nice -n 10 make sweep-4x4-old JOBS=1` in `tmux`. That's one run at a time so the sites keep a core, roughly 1½ days (estimate; check with `scripts/throughput.py --config configs/4x4.yaml` first).
 
@@ -621,7 +621,7 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 - [ ] Review E1 and the pilots. If 6×6 isn't learning, change at most 2 shared knobs (lr, budget, ε schedule), the same for all four conditions.
 - [ ] Set E2's budget from the pilot curves: 200k if they've plateaued by then, up to 400k if still rising. Rescale `replay_capacity` and `eval_every` with it (§4.5 budget rule).
 - [ ] **8×8 gate 2** (§4.8): go/no-go on E6. If go, set E6's budget (≤ 1M) from P8's curve and rescale likewise.
-- [ ] 6×6 endgame solver + 500-position test set, cached.
+- [ ] 6×6 endgame solver + 500-position test set, cached. Then set `endgame_set: data/endgame6.jsonl` in `configs/6x6.yaml` again (before E2), and backfill the pilots' endgame accuracy from their checkpoints.
 
 **Tue Dec 1** (~4 h) — **M2: experiment code freeze**
 - [ ] Launch **E2** (6×6 2×2, 12 runs, endgame accuracy in eval): `caffeinate -i make sweep-6x6` on the laptop GPU, four at a time in three batches, ~8½ h at 200k or ~16½ h at 400k.

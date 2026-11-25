@@ -7,8 +7,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from othello_rl import rundir
+from othello_rl import evaluate, nets, rundir
 from othello_rl.config import SAMPLINGS, Config, load_config, parse_cli
+from othello_rl.players import NetPlayer
 
 CONFIGS = Path(__file__).resolve().parents[1] / "configs"
 
@@ -18,6 +19,21 @@ def test_shipped_configs_load(name, board):
     cfg = load_config(CONFIGS / name)
     assert cfg.board == board
     assert cfg.action_size == board * board + 1
+
+
+@pytest.mark.parametrize("name", ["4x4.yaml", "6x6.yaml", "8x8.yaml"])
+def test_shipped_configs_can_start_a_run(name, monkeypatch):
+    """Everything a run loads before its first eval point: the data files the config names exist, and
+    every metric it turns on is implemented. (The 6×6 pilots once died at start-up on a missing
+    endgame set.)"""
+    monkeypatch.chdir(CONFIGS.parent)  # config paths are relative to the repo root
+    cfg = load_config(CONFIGS / name)
+    if cfg.solver_table and not Path(cfg.solver_table).exists():
+        pytest.skip(f"{cfg.solver_table} is built by `make data` (not in git)")
+    ctx = evaluate.EvalContext.from_config(cfg)
+    assert ctx.openings
+    if ctx.endgame_set is not None:
+        evaluate.endgame_accuracy(NetPlayer(nets.build_net(cfg)), ctx.endgame_set[:1])
 
 
 def test_cli_overrides_yaml():
