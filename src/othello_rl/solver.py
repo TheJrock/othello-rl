@@ -10,13 +10,26 @@ because s2 is seen from the opponent's perspective.
 
 from __future__ import annotations
 
+import multiprocessing
 from collections.abc import Sequence
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
 
 import numpy as np
 
-from .engine import State, flips, initial, is_terminal, legal_mask, legal_moves, outcome, step
+from .engine import (
+    State,
+    flips,
+    initial,
+    is_terminal,
+    legal_mask,
+    legal_moves,
+    outcome,
+    step,
+    to_string,
+    transform_state,
+)
 
 Table = dict[tuple[int, int], int]  # (me, opp) bitboards → value for the side to move
 
@@ -225,24 +238,178 @@ def exact_score_vs_random(choose, starts: Sequence[State]) -> float:
 # --- 6×6: endgame solver ----------------------------------------------------------------------
 
 
+ORDER_MIN_EMPTIES = 5  # below this many empties, sorting moves costs more than it saves
+
+
+def _corners(n: int) -> int:
+    return 1 | 1 << (n - 1) | 1 << (n * (n - 1)) | 1 << (n * n - 1)
+
+
 def solve_wld(s: State, alpha: int = -1, beta: int = 1, tt: dict | None = None) -> int:
     """Win/draw/loss value of s for the side to move, for any board size.
 
-    Alpha-beta with a null window, move ordering (corners first, then fewest opponent replies), and
-    a transposition table `tt` keyed on (me, opp). Practical up to ~12 empties on 6×6.
-    tests/test_solver.py cross-checks it against the full 4×4 table."""
-    raise NotImplementedError("solver.solve_wld")
+    Fail-soft alpha-beta negamax. With alpha < beta, the result v satisfies: v ≤ alpha means the
+    value is ≤ v, v ≥ beta means the value is ≥ v, and otherwise v is exact. So a null window such
+    as (0, 1) answers "is this a win?" quickly; the default (−1, 1) gives the exact value.
+
+    Move ordering: corners first, then fewest opponent replies (a cutoff comes sooner when the best
+    move is tried first). The transposition table `tt` maps (me, opp) to known (lower, upper) bounds;
+    pass the same dict to related calls (e.g. a position's children) to share work. Practical up to
+    ~12 empties on 6×6. tests/test_solver.py cross-checks it against the full 4×4 table and a plain
+    negamax on 6×6."""
+    if not alpha < beta:
+        raise ValueError(f"need alpha < beta, got ({alpha}, {beta})")
+    tt = {} if tt is None else tt
+    n = s.n
+    cells = n * n
+    corners = _corners(n)
+
+    def search(me: int, opp: int, alpha: int, beta: int) -> int:
+        key = (me, opp)
+        lo, hi = tt.get(key, (-1, 1))
+        if lo == hi or lo >= beta:
+            return lo
+        if hi <= alpha:
+            return hi
+        alpha, beta = max(alpha, lo), min(beta, hi)  # what's known already narrows the window
+        a0, b0 = alpha, beta
+        st = State(me, opp, n)
+        moves = legal_moves(st)
+        if not moves:
+            if not legal_moves(State(opp, me, n)):  # neither side can move: game over
+                diff = me.bit_count() - opp.bit_count()
+                v = (diff > 0) - (diff < 0)
+                tt[key] = (v, v)
+                return v
+            v = -search(opp, me, -beta, -alpha)  # forced pass
+        else:
+            children = []
+            while moves:
+                bit = moves & -moves
+                moves ^= bit
+                f = flips(st, bit.bit_length() - 1)
+                children.append((opp & ~f, me | f | bit, bit))
+            if len(children) > 1 and cells - (me | opp).bit_count() >= ORDER_MIN_EMPTIES:
+                children.sort(
+                    key=lambda c: (not c[2] & corners, legal_moves(State(c[0], c[1], n)).bit_count())
+                )
+            v = -1
+            for o2, m2, _ in children:  # the child is seen from the opponent's side
+                v = max(v, -search(o2, m2, -beta, -alpha))
+                alpha = max(alpha, v)
+                if alpha >= beta:
+                    break
+        if v <= a0:
+            hi = min(hi, v)  # failed low: an upper bound
+        elif v >= b0:
+            lo = max(lo, v)  # failed high: a lower bound
+        else:
+            lo = hi = v
+        tt[key] = (lo, hi)
+        return v
+
+    return search(s.me, s.opp, alpha, beta)
 
 
-def endgame_child_values(s: State) -> np.ndarray:
-    """Like child_values, computed with solve_wld instead of a table."""
-    raise NotImplementedError("solver.endgame_child_values")
+def endgame_child_values(s: State, tt: dict | None = None) -> np.ndarray:
+    """Like child_values, computed with solve_wld instead of a table: float array (n*n + 1,) with
+    the exact value of each legal action for the side to move, NaN for illegal actions. The
+    children share one transposition table."""
+    tt = {} if tt is None else tt
+    values = np.full(s.n * s.n + 1, np.nan)
+    for a in np.flatnonzero(legal_mask(s)):
+        s2, r, done = step(s, int(a))
+        values[a] = r if done else -solve_wld(s2, tt=tt)
+    return values
 
 
-def build_endgame_set(count: int, min_empties: int, max_empties: int, seed: int, workers: int) -> list[dict]:
+ENDGAME_EPSILON = 0.2  # reference players' chance of a uniformly random move while sampling
+
+
+def _endgame_record(state: tuple[int, int, int, bool]) -> dict:
+    """Solve one candidate (worker-process entry point, so it takes and returns plain data)."""
+    me, opp, n, black_to_move = state
+    s = State(me, opp, n, black_to_move)
+    values = endgame_child_values(s)
+    return {
+        "board": to_string(s),
+        "black_to_move": black_to_move,
+        "values": [None if np.isnan(v) else int(v) for v in values],
+    }
+
+
+def _canonical(s: State) -> tuple[int, int]:
+    """The same key for all 8 symmetric copies of a position."""
+    return min((t.me, t.opp) for t in (transform_state(s, k) for k in range(8)))
+
+
+def _endgame_candidates(n: int, min_empties: int, max_empties: int, rng: np.random.Generator):
+    """Endless stream of distinct (up to symmetry) positions with ≥ 2 legal squares. Game i is
+    played by two reference players drawn uniformly from random / greedy / positional, each making
+    a uniformly random move with probability ENDGAME_EPSILON, and yields its first position with
+    exactly min_empties + (i mod #levels) empties (so the levels come out about equally often)."""
+    from .players import GreedyPlayer, PositionalPlayer, RandomPlayer  # torch: see PerfectPlayer
+
+    players = [RandomPlayer(), GreedyPlayer(), PositionalPlayer(n)]
+    rand = players[0]
+    levels = max_empties - min_empties + 1
+    seen: set[tuple[int, int]] = set()
+    game = 0
+    while True:
+        target = min_empties + game % levels
+        game += 1
+        black, white = rng.choice(len(players), 2)
+        s = initial(n)
+        while not is_terminal(s):
+            empties = n * n - (s.me | s.opp).bit_count()
+            if empties < target:
+                break
+            if empties == target and legal_moves(s).bit_count() >= 2:
+                key = _canonical(s)
+                if key not in seen:
+                    seen.add(key)
+                    yield s
+                break
+            if legal_moves(s) == 0:  # forced pass: play it, as selfplay.play_games does
+                s = step(s, s.n * s.n)[0]
+                continue
+            player = players[black if s.black_to_move else white]
+            if rng.random() < ENDGAME_EPSILON:
+                player = rand
+            s = step(s, player.act([s], rng)[0])[0]
+
+
+def build_endgame_set(
+    count: int, min_empties: int, max_empties: int, seed: int, workers: int, n: int = 6
+) -> list[dict]:
     """The 6×6 endgame test set (spec §4.4): `count` distinct positions with min..max empties,
-    sampled from games between randomized reference players, kept only if their legal moves don't
-    all have the same value. Solve them in parallel (multiprocessing, `workers` processes).
+    sampled from games between randomized reference players (see _endgame_candidates), kept only
+    if their legal moves don't all have the same value. Solved in parallel with `workers` processes.
+
+    The result depends only on the arguments, not on `workers`: candidates come from one seeded
+    stream, are solved in order, and the first `count` that pass the filter are kept. `n` is there
+    for tests (4×4 can be checked against the full table).
 
     Returns records {"board", "black_to_move", "values"} (format in data/README.md)."""
-    raise NotImplementedError("solver.build_endgame_set")
+    rng = np.random.default_rng(seed)
+    candidates = _endgame_candidates(n, min_empties, max_empties, rng)
+    records: list[dict] = []
+    pool = multiprocessing.get_context("spawn").Pool(workers) if workers > 1 else None
+    try:
+        while len(records) < count:
+            # About twice what's still needed: most candidates pass the filter.
+            batch = [
+                (s.me, s.opp, n, s.black_to_move) for s in islice(candidates, 2 * (count - len(records)))
+            ]
+            solved = pool.map(_endgame_record, batch, chunksize=4) if pool else map(_endgame_record, batch)
+            for record in solved:
+                legal = [v for v in record["values"] if v is not None]
+                if min(legal) != max(legal):
+                    records.append(record)
+                    if len(records) == count:
+                        break
+    finally:
+        if pool:
+            pool.close()
+            pool.join()
+    return records

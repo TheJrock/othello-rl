@@ -17,6 +17,7 @@ import argparse
 import json
 import os
 import sys
+from collections import Counter
 from pathlib import Path
 
 from othello_rl import evaluate, regret, solver
@@ -66,6 +67,15 @@ def cmd_endgame6(args: argparse.Namespace) -> None:
         for record in records:
             f.write(json.dumps(record) + "\n")
     print(f"{len(records)} solved positions -> {out}")
+    # Summary for the spec: empties per level, position values, and a uniform-random mover's accuracy.
+    empties = Counter(r["board"].count(".") for r in records)
+    legal = [[v for v in r["values"] if v is not None] for r in records]
+    values = Counter(max(v) for v in legal)
+    chance = sum(v.count(max(v)) / len(v) for v in legal) / len(legal)
+    print(
+        f"  empties {dict(sorted(empties.items()))}; values for the side to move {dict(sorted(values.items()))}"
+    )
+    print(f"  {sum(map(len, legal)) / len(legal):.2f} legal moves per position; chance accuracy {chance:.3f}")
 
 
 def cmd_regret_positions(args: argparse.Namespace) -> None:

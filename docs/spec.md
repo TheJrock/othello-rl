@@ -226,6 +226,13 @@ Both checks pass on 6×6 and 8×8. On 4×4, greedy is no better than random: gra
   - *Measured Nov 23:* 7,912 positions; chance accuracy **49.4%**. A random player's measured accuracy matches it.
 - **6×6 endgame solver:** alpha-beta WLD search with a null window, move ordering (corners first, then fewest opponent replies), and a transposition table.
 - **6×6 endgame test set:** 500 positions with 10–12 empties, sampled from games between randomized reference players, filtered as above. Solve once with `multiprocessing` and cache to `data/endgame6.jsonl`.
+  - *Implemented Nov 24, ahead of the Nov 30 slot* (`solver.solve_wld`, `endgame_child_values`, `build_endgame_set`; `evaluate.endgame_accuracy`).
+    - **Solver:** fail-soft alpha-beta negamax. The transposition table stores (lower, upper) bounds, so null-window and full-window searches can share it. Solving every move of a 12-empty 6×6 position takes ~0.1 s, far faster than feared.
+    - **Checks:** the solver matches the full 4×4 table, including null windows with one table shared across 1,500 positions, and a plain negamax on 6×6 positions with ≤ 7 empties. Its move values match `child_values` on 1,000 4×4 positions, forced passes included. Nine of ten planted bugs were caught; the tenth only removed a shortcut and left results exact.
+    - **Sampling:** each game is played by two reference players drawn uniformly from random / greedy / positional, each making a random move with probability 0.2. A game yields its first position at a target number of empties, cycling 10 → 11 → 12, with ≥ 2 legal squares. Positions are distinct up to D4 symmetry. The output depends only on the seed, not the worker count (tested).
+    - **The set** (`make data` step `build_data.py endgame6`, seed 0, 18 s with 4 workers): 167 / 180 / 153 positions at 10 / 11 / 12 empties, 5.76 legal moves on average, **chance accuracy 48.6%**.
+    - **Every position is won (466) or drawn (34) for the side to move.** In a lost position every move loses, so the filter drops it. The metric therefore measures *keeping* a won or drawn result, never saving a lost one. Say so in the report.
+    - *First reading (pilot checkpoints so far):* untrained 45.6%; 72–77% at 10k games; ~78–79% at 20k. The metric has headroom and separates checkpoints.
 
 ### 4.5 DQN (`nets.py`, `replay.py`, `targets.py`)
 
@@ -607,12 +614,13 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 **Wed Nov 25** (~4 h) — **M1**
 - [x] Opponent pool, checkpointing, YAML configs, run directories with commit hash. *(Done Nov 24, a day early: checkpointing, configs and run directories with `train.py`, then `pool.PoolSampler`. Ladder rung 4 passed, §4.6. E1 and the pilots are ready to launch.)*
 - [x] Launch **E1** (4×4 2×2, 20 runs): `caffeinate -i make sweep-4x4` in `tmux`, four at a time on the laptop GPU, ~30 min. *(Done Nov 24, a day early: 20/20 in 26 min. Results in §4.8: N > A clearly, pool ≈ naive, and accuracy peaks at ~10k games before declining.)*
-- [ ] Launch **6×6 pilots** (4 runs, 400k games) ~~on the server before leaving for the holiday~~ on the laptop GPU after E1: `caffeinate -i make pilot-6x6` (*Nov 24: the server is too slow, §4.8. The user is home for the holiday, and the laptop can run day and night*). ~6–7 h sharing the GPU with P8. *(Nov 24: the first launch died at start-up, because `configs/6x6.yaml` named `data/endgame6.jsonl`, which isn't built until Nov 30, and `evaluate.endgame_accuracy` is still a stub. `endgame_set` is now `null` until then. `tests/test_infra.py::test_shipped_configs_can_start_a_run` checks every shipped config's data files and metrics, and a 1k-game 6×6 run passed. P8 was unaffected.)*
-- [ ] If gate 1 passed (it did, Nov 24): launch the **8×8 pilot** P8 (1M games) ~~on hardware the 6×6 pilots don't use~~ on the laptop GPU alongside the 6×6 pilots: `caffeinate -i make pilot-8x8` in a second `tmux` window (*Nov 24: there is no second GPU, and the pilots aren't E2, so sharing is fine*). ~1 day.
+- [x] Launch **6×6 pilots** (4 runs, 400k games) ~~on the server before leaving for the holiday~~ on the laptop GPU after E1: `caffeinate -i make pilot-6x6` (*Nov 24: the server is too slow, §4.8. The user is home for the holiday, and the laptop can run day and night*). ~6–7 h sharing the GPU with P8. *(Nov 24: the first launch died at start-up, because `configs/6x6.yaml` named `data/endgame6.jsonl`, which isn't built until Nov 30, and `evaluate.endgame_accuracy` is still a stub. `endgame_set` was set to `null`, then restored the same night once the set and the metric existed (§4.4). `tests/test_infra.py::test_shipped_configs_can_start_a_run` checks every shipped config's data files and metrics, and a 1k-game 6×6 run passed. P8 was unaffected.)*
+- [x] If gate 1 passed (it did, Nov 24): launch the **8×8 pilot** P8 (1M games) ~~on hardware the 6×6 pilots don't use~~ on the laptop GPU alongside the 6×6 pilots: `caffeinate -i make pilot-8x8` in a second `tmux` window (*Nov 24: there is no second GPU, and the pilots aren't E2, so sharing is fine*). ~1 day.
 - [ ] *(optional)* On the server: E7's 4×4 half. Do it after `git pull` of the code E1 ran, so both use the same code. Run `.venv/bin/python scripts/build_data.py solve4x4`, then `nice -n 10 make sweep-4x4-old JOBS=1` in `tmux`. That's one run at a time so the sites keep a core, roughly 1½ days (estimate; check with `scripts/throughput.py --config configs/4x4.yaml` first).
 
 **Thu Nov 26 – Sat Nov 28** — Thanksgiving (optional ~2 h Sat)
-- [ ] *(optional)* Start the 6×6 endgame solver or the TS engine port. Both are off the training critical path.
+- [x] *(optional)* Start the 6×6 endgame solver or the TS engine port. Both are off the training critical path. *(Endgame solver done Nov 24, §4.4.)*
+  - *Nov 24: both pilots launched that evening, a day early (P8 at 03:46 UTC, the 6×6 relaunch at 04:48 UTC Nov 25), at commit 243a6cd. Pace: 6×6 ~9 min per 10k games (~6 h per run); P8 ~20 min per 20k games while alone.*
 - [ ] Glance at pilot logs (6×6 and P8); don't change training code.
 
 ### Week 2 — 6×6 experiments and demo (Nov 30 – Dec 5)
@@ -621,7 +629,7 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 - [ ] Review E1 and the pilots. If 6×6 isn't learning, change at most 2 shared knobs (lr, budget, ε schedule), the same for all four conditions.
 - [ ] Set E2's budget from the pilot curves: 200k if they've plateaued by then, up to 400k if still rising. Rescale `replay_capacity` and `eval_every` with it (§4.5 budget rule).
 - [ ] **8×8 gate 2** (§4.8): go/no-go on E6. If go, set E6's budget (≤ 1M) from P8's curve and rescale likewise.
-- [ ] 6×6 endgame solver + 500-position test set, cached. Then set `endgame_set: data/endgame6.jsonl` in `configs/6x6.yaml` again (before E2), and backfill the pilots' endgame accuracy from their checkpoints.
+- [x] 6×6 endgame solver + 500-position test set, cached. Then set `endgame_set: data/endgame6.jsonl` in `configs/6x6.yaml` again (before E2), and backfill the pilots' endgame accuracy from their checkpoints. *(Done Nov 24, §4.4, and `endgame_set` restored. Still to do: backfill the pilots once they finish.)*
 
 **Tue Dec 1** (~4 h) — **M2: experiment code freeze**
 - [ ] Launch **E2** (6×6 2×2, 12 runs, endgame accuracy in eval): `caffeinate -i make sweep-6x6` on the laptop GPU, four at a time in three batches, ~8½ h at 200k or ~16½ h at 400k.

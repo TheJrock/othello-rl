@@ -155,8 +155,9 @@ def solver_values(table: solver.Table, positions: Sequence[State]) -> np.ndarray
 def optimal_move_accuracy(
     player: Player, positions: Sequence[State], values: np.ndarray, rng: np.random.Generator
 ) -> float:
-    """4×4: fraction of positions where the player's action achieves the position's value (is one
-    of solver.optimal_actions). `values` = solver_values(table, positions)."""
+    """Fraction of positions where the player's action achieves the position's value. `values`
+    holds exact action values with NaN for illegal actions: solver_values(table, positions) on 4×4,
+    endgame_values(records) for the 6×6 endgame set."""
     actions = np.asarray(player.act(positions, rng))
     chosen = values[np.arange(len(positions)), actions]  # NaN (never optimal) if the move is illegal
     return float(np.mean(chosen == np.nanmax(values, axis=1)))
@@ -188,9 +189,20 @@ def q_solver_corr(player: NetPlayer, positions: Sequence[State], values: np.ndar
     return float(np.corrcoef(q, v)[0, 1])
 
 
-def endgame_accuracy(player: Player, records: Sequence[dict[str, Any]]) -> float:
-    """6×6: fraction of endgame positions where the player's action has the best recorded value."""
-    raise NotImplementedError("evaluate.endgame_accuracy")
+def endgame_values(records: Sequence[dict[str, Any]]) -> tuple[list[State], np.ndarray]:
+    """(positions, values) from endgame-set records, with values shaped like solver_values: one row
+    per position, NaN for illegal actions."""
+    positions = [from_string(r["board"], r["black_to_move"]) for r in records]
+    values = np.array([[np.nan if v is None else v for v in r["values"]] for r in records], dtype=float)
+    return positions, values
+
+
+def endgame_accuracy(player: Player, records: Sequence[dict[str, Any]], rng: np.random.Generator) -> float:
+    """6×6: fraction of endgame positions where the player's action has the best recorded value
+    (optimal_move_accuracy on the endgame set). The set's positions are all won or drawn for the
+    side to move, since in a lost one every move is equally bad (solver.build_endgame_set)."""
+    positions, values = endgame_values(records)
+    return optimal_move_accuracy(player, positions, values, rng)
 
 
 @dataclass
@@ -251,7 +263,7 @@ def evaluate_checkpoint(
         row["q_mse_4x4"] = q_solver_mse(player, ctx.positions_4x4, ctx.values_4x4)
         row["q_corr_4x4"] = q_solver_corr(player, ctx.positions_4x4, ctx.values_4x4)
     if ctx.endgame_set is not None:
-        row["endgame_accuracy"] = endgame_accuracy(player, ctx.endgame_set)
+        row["endgame_accuracy"] = endgame_accuracy(player, ctx.endgame_set, rng)
     return row
 
 

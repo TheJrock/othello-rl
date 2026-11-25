@@ -11,7 +11,10 @@ from othello_rl import solver
 from othello_rl.evaluate import (
     EvalContext,
     MatchStats,
+    endgame_accuracy,
+    endgame_values,
     evaluate_checkpoint,
+    load_endgame_set,
     load_states,
     opening_bank,
     optimal_move_accuracy,
@@ -245,3 +248,51 @@ def test_evaluate_checkpoint_fields(table, positions, values, rng):
         assert lo <= row[f"score_{name}"] <= hi
     assert row["score_selfplay"] == 0.5  # a greedy net against itself, each opening from both sides
     assert {"accuracy_4x4", "q_mse_4x4", "q_corr_4x4"} <= row.keys()
+
+
+# --- endgame accuracy (the 6×6 metric, checked on 4×4 records against the full table) -------------
+
+
+@pytest.fixture(scope="module")
+def endgame_records(table, tmp_path_factory):
+    """A 4×4 endgame set written to and read back from the data/ file format (null ↔ NaN)."""
+    import json
+
+    records = solver.build_endgame_set(count=60, min_empties=5, max_empties=9, seed=0, workers=1, n=4)
+    path = tmp_path_factory.mktemp("endgame") / "endgame4.jsonl"
+    path.write_text("".join(json.dumps(r) + "\n" for r in records))
+    return load_endgame_set(path)
+
+
+def test_endgame_values_match_solver_values(table, endgame_records):
+    positions, values = endgame_values(endgame_records)
+    np.testing.assert_array_equal(values, solver_values(table, positions))
+
+
+def test_endgame_accuracy_perfect_random_and_illegal(table, endgame_records, rng):
+    assert endgame_accuracy(solver.PerfectPlayer(table), endgame_records, rng) == 1.0
+    positions, _ = endgame_values(endgame_records)
+    chance = solver.chance_accuracy(table, positions)
+    acc = np.mean([endgame_accuracy(RandomPlayer(), endgame_records, rng) for _ in range(200)])
+    assert acc == pytest.approx(chance, abs=0.02)
+
+    class PlaysPass:
+        name = "pass"
+
+        def act(self, states, rng):
+            return [16] * len(states)
+
+    assert endgame_accuracy(PlaysPass(), endgame_records, rng) == 0.0
+
+
+def test_evaluate_checkpoint_logs_endgame_accuracy(endgame_records, rng):
+    from othello_rl.config import Config
+    from othello_rl.nets import build_net
+
+    cfg = Config(board=4, channels=8, layers=1)
+    ctx = EvalContext(
+        openings=opening_bank(4, 4, None, 0)[:5], references=reference_players(4), endgame_set=endgame_records
+    )
+    row = evaluate_checkpoint(build_net(cfg), None, cfg, ctx, rng)
+    assert 0.0 <= row["endgame_accuracy"] <= 1.0
+    assert "accuracy_4x4" not in row

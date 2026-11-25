@@ -33,7 +33,9 @@ def test_shipped_configs_can_start_a_run(name, monkeypatch):
     ctx = evaluate.EvalContext.from_config(cfg)
     assert ctx.openings
     if ctx.endgame_set is not None:
-        evaluate.endgame_accuracy(NetPlayer(nets.build_net(cfg)), ctx.endgame_set[:1])
+        evaluate.endgame_accuracy(
+            NetPlayer(nets.build_net(cfg)), ctx.endgame_set[:1], np.random.default_rng(0)
+        )
 
 
 def test_cli_overrides_yaml():

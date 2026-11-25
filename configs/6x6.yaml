@@ -32,4 +32,4 @@ pool_p_latest: 0.5
 eval_every: 10000        # 41 eval points / pool snapshots; keep ~40 if `games` changes
 openings: data/openings_6x6.json
 solver_table: null
-endgame_set: null         # data/endgame6.jsonl once it and evaluate.endgame_accuracy exist (Nov 30, spec §6); the pilots get it backfilled from their checkpoints
+endgame_set: data/endgame6.jsonl  # built Nov 24 (spec §4.4). The 6×6 pilots ran without it; backfill theirs from checkpoints

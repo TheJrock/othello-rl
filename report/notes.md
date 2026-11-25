@@ -57,6 +57,11 @@ The full details and numbers live in `docs/spec.md` (section refs in brackets).
 - My budget rule was off for 4×4: its 100k buffer holds ~27% of a run's transitions, not the 10% I'd assumed (games average ~12.4 plies). 6×6 and 8×8 really are ~10%.
 - Pool learners win 53–55% of their training games, since they beat older snapshots. A-pool's loss is higher than A-naive's (0.032 vs 0.024): more varied opponents mean noisier A targets.
 
+### 6×6 endgame metric (Nov 24)
+- The endgame test set (500 positions, 10–12 empties, exact win/draw/loss values) contains only positions that are won (93%) or drawn (7%) for the side to move. A lost position can't test anything, because every move loses equally. So "endgame accuracy" means *keeping* a won or drawn result, never saving a lost one. Say this when defining the metric. Chance accuracy is 48.6%. [§4.4]
+- First readings on the 6×6 pilot checkpoints: untrained 46%, 72–77% at 10k games, ~78–79% at 20k. Plenty of headroom.
+- The exact solver turned out cheap (~0.1 s per 12-empty position, in plain Python). Deeper endgames (14–16 empties) would be feasible if a harder set is ever wanted.
+
 ### Settings change (Nov 24)
 - Changed `eps_end` 0.05 → 0.1 and `target_update_every` 1000 → 250 on all boards, after the ladder rerun.
   - Why the target update mattered: with γ = 1, a value moves back about one decision per target-net update, and a 4×4 run had only ~11–23 updates at 1,000. It now has ~92.
@@ -76,6 +81,7 @@ The full details and numbers live in `docs/spec.md` (section refs in brackets).
 - [x] **Buffer test** (Nov 24, `make replay-4x4`): confirmed, see above. E4 is now "buffer size", with a bigger buffer rather than ¼ size.
 - [ ] Do the 6×6 pilots show the same peak-then-decline? On 6×6, ε reaches its floor at 80k games and the buffer holds ~40k games, a smaller share of training than on 4×4. Read the curves for a peak, not just a plateau, when setting E2's budget (Nov 30).
 - [ ] If they do: raise E2's buffer for all conditions (one of the ≤ 2 shared knobs)? A full 6×6 buffer is ~3.4 GB per run, fine on 32 GB. Could also run a 6×6 big-buffer pilot to check first.
+- [ ] Backfill the 6×6 pilots' endgame accuracy from their checkpoints once they finish (they ran without the set).
 - [ ] Optional: run E1's full 2×2 with the big buffer on 4×4 (~26 min). Does the pool matter even less once the buffer keeps everything? D1's implicit-pool idea predicts yes.
 - [ ] **E3 on 4×4:** does an E1 run's ~10k-game checkpoint beat its final checkpoint in real games? If so, that's a concrete H2/H3 example: a decline the self-play score never flagged. Cheap once `crossplay_matrix` exists.
 - [ ] Caveat when picking E2's budget from the pilots: the ε schedule and the buffer scale with `games`. A 200k run reaches ε's floor at 40k (the pilot at 80k), so the pilot's curve at 200k only approximates a 200k run.
@@ -84,4 +90,5 @@ The full details and numbers live in `docs/spec.md` (section refs in brackets).
 - [ ] If citing a training-time pool sampling rule, check how TiZero (MADRID's ref. [29]) samples opponents. [§4.6]
 - [ ] E7 (old settings) if there's spare compute: is the settings change itself a finding?
 - [ ] `learner_score` in the logs comes from training games with ε on. Don't plot it as a strength measure.
+- [ ] Wording: `score_selfplay` (`self=` in stdout) is the score vs the *previous checkpoint* (D5), not vs itself. Its first value is always ~0.97–0.99, because the previous checkpoint is the untrained game-0 net. In the report, call it "score vs the previous checkpoint", or define "self-play score" once, clearly.
 - [ ] E1's `meta.json` files say `dirty: true`. Only the spec was uncommitted then; the code is commit 091c38e. Mention in the reproducibility appendix if relevant.

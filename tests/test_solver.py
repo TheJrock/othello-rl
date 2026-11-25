@@ -50,6 +50,85 @@ def test_endgame_solver_matches_full_solve(table, rng):
         assert S.solve_wld(s) == table[(s.me, s.opp)]
 
 
+def test_endgame_solver_windows_with_a_shared_table(table, rng):
+    """Fail-soft bounds stay correct when null windows and one shared transposition table mix: a
+    bound stored by one search must never be misread as an exact value by another."""
+    tt: dict = {}
+    for s in sample_states(table, 1500, rng):
+        v = table[(s.me, s.opp)]
+        for alpha, beta in [(-1, 0), (0, 1), (-1, 1)]:
+            r = S.solve_wld(s, alpha, beta, tt=tt)
+            if v <= alpha:
+                assert v <= r <= alpha
+            elif v >= beta:
+                assert beta <= r <= v
+            else:
+                assert r == v
+
+
+def test_endgame_solver_rejects_an_empty_window():
+    with pytest.raises(ValueError):
+        S.solve_wld(E.initial(4), 0, 0)
+
+
+def test_endgame_child_values_match_the_table(table, rng):
+    states = sample_states(table, 1000, rng)
+    assert any(E.legal_mask(s)[16] for s in states)  # forced passes are covered
+    for s in states:
+        np.testing.assert_array_equal(S.endgame_child_values(s), S.child_values(table, s))
+
+
+def _plain_negamax(s):
+    """Reference for 6×6: no pruning, no table, no ordering."""
+    legal = np.flatnonzero(E.legal_mask(s))
+    if legal.size == 0:
+        return E.outcome(s)
+    return max(r if done else -_plain_negamax(s2) for s2, r, done in (E.step(s, int(a)) for a in legal))
+
+
+def test_endgame_solver_matches_plain_negamax_on_6x6(rng):
+    checked = 0
+    while checked < 40:
+        s = E.initial(6)
+        while 36 - (s.me | s.opp).bit_count() > 7 and not E.is_terminal(s):
+            s = E.step(s, int(rng.choice(np.flatnonzero(E.legal_mask(s)))))[0]
+        if E.is_terminal(s):
+            continue
+        assert S.solve_wld(s) == _plain_negamax(s)
+        checked += 1
+
+
+@pytest.fixture(scope="module")
+def endgame_4x4():
+    return S.build_endgame_set(count=40, min_empties=5, max_empties=8, seed=0, workers=1, n=4)
+
+
+def test_endgame_set_values_are_exact(table, endgame_4x4):
+    for r in endgame_4x4:
+        s = E.from_string(r["board"], r["black_to_move"])
+        exact = S.child_values(table, s)
+        assert r["values"] == [None if np.isnan(v) else int(v) for v in exact]
+
+
+def test_endgame_set_positions_are_informative_distinct_and_in_range(endgame_4x4):
+    assert len(endgame_4x4) == 40
+    keys = set()
+    empties = []
+    for r in endgame_4x4:
+        s = E.from_string(r["board"], r["black_to_move"])
+        legal = [v for v in r["values"] if v is not None]
+        assert len(legal) >= 2 and min(legal) != max(legal)  # the move choice matters
+        empties.append(16 - (s.me | s.opp).bit_count())
+        keys.add(S._canonical(s))
+    assert len(keys) == 40  # distinct even up to symmetry
+    assert set(empties) == {5, 6, 7, 8}  # every level appears
+
+
+def test_endgame_set_is_seeded_and_independent_of_workers(endgame_4x4):
+    assert S.build_endgame_set(count=40, min_empties=5, max_empties=8, seed=0, workers=2, n=4) == endgame_4x4
+    assert S.build_endgame_set(count=40, min_empties=5, max_empties=8, seed=1, workers=1, n=4) != endgame_4x4
+
+
 def test_eval_positions_are_informative(table, eval_positions):
     positions = eval_positions
     assert positions
