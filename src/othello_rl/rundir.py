@@ -3,7 +3,9 @@
     runs/<exp>/<target>-<sampling>/seed<k>/
         config.yaml          resolved Config
         meta.json            git commit + dirty flag, host, start time, versions
-        log.jsonl            one row per eval point (spec §4.6)
+        log.jsonl            one row per eval point (spec §4.6), append-only, written by training
+        backfill.jsonl       optional: metrics computed later from the checkpoints (scripts/backfill.py),
+                             one row per eval point keyed by `games`; read_log merges it in
         stdout.log           written by scripts/sweep.py
         ckpt/g0005000.pt     one checkpoint per eval point; these are also the opponent pool
                              and the regret references (spec D8)
@@ -26,6 +28,7 @@ from .config import Config, load_config
 
 CKPT_DIR = "ckpt"
 LOG_FILE = "log.jsonl"
+BACKFILL_FILE = "backfill.jsonl"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -55,8 +58,8 @@ def _torch_version() -> str | None:
 def prepare_run_dir(cfg: Config, overwrite: bool = False) -> Path:
     """Create the run directory and write config.yaml + meta.json.
 
-    Refuses to touch a run that already has a log unless `overwrite`, in which case the old log and
-    checkpoints are deleted so results from two different runs can never mix.
+    Refuses to touch a run that already has a log unless `overwrite`, in which case the old log,
+    backfill and checkpoints are deleted so results from two different runs can never mix.
     """
     run_dir = cfg.run_dir
     log = run_dir / LOG_FILE
@@ -64,6 +67,7 @@ def prepare_run_dir(cfg: Config, overwrite: bool = False) -> Path:
         if not overwrite:
             raise FileExistsError(f"{run_dir} already has a {LOG_FILE}; pass --overwrite to replace that run")
         log.unlink()
+        (run_dir / BACKFILL_FILE).unlink(missing_ok=True)
         shutil.rmtree(run_dir / CKPT_DIR, ignore_errors=True)
     (run_dir / CKPT_DIR).mkdir(parents=True, exist_ok=True)
     cfg.save(run_dir / "config.yaml")
@@ -119,9 +123,36 @@ class JsonlLogger:
         self.close()
 
 
-def read_log(run_dir: str | Path) -> list[dict[str, Any]]:
-    path = Path(run_dir) / LOG_FILE
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def read_backfill(run_dir: str | Path) -> dict[int, dict[str, Any]]:
+    """Backfilled metrics by `games` ({} if the run has none)."""
+    path = Path(run_dir) / BACKFILL_FILE
+    return {row["games"]: row for row in _read_jsonl(path)} if path.exists() else {}
+
+
+def write_backfill(run_dir: str | Path, rows: list[dict[str, Any]]) -> None:
+    """Merge rows ({"games": g, metric: value, ...}) into the run's backfill file, replacing any
+    earlier value of the same metric at the same eval point. Written atomically (temp file, then
+    rename), so a reader never sees half a file."""
+    merged = read_backfill(run_dir)
+    for row in rows:
+        merged.setdefault(row["games"], {}).update(row)
+    path = Path(run_dir) / BACKFILL_FILE
+    tmp = path.with_suffix(".jsonl.tmp")
+    tmp.write_text("".join(json.dumps(merged[g], default=_jsonable) + "\n" for g in sorted(merged)))
+    tmp.replace(path)
+
+
+def read_log(run_dir: str | Path, backfill: bool = True) -> list[dict[str, Any]]:
+    """The run's log rows. With `backfill`, each row also gets the backfilled metrics for its eval
+    point, unless training already logged that metric (training's own value always wins)."""
+    rows = _read_jsonl(Path(run_dir) / LOG_FILE)
+    if backfill and (extra := read_backfill(run_dir)):
+        rows = [{**extra.get(r["games"], {}), **r} for r in rows]
+    return rows
 
 
 def find_runs(root: str | Path = "runs", exp: str | None = None) -> list[Path]:

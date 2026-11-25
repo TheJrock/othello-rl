@@ -79,6 +79,11 @@ STYLE = {
 EXTERNAL = {4: ("accuracy_4x4", "optimal-move accuracy"), 6: ("score_positional", "score vs positional")}
 
 
+def _save(fig: plt.Figure, path: Path) -> None:
+    """Save without a creation date, so redrawing unchanged data leaves the committed PDF unchanged."""
+    fig.savefig(path, metadata={"CreationDate": None})
+
+
 class Skip(Exception):
     """The data a figure needs isn't there yet (reported as [skip], not as an error)."""
 
@@ -202,7 +207,7 @@ def two_panel(
         if ylim:
             axes[0].set_ylim(*ylim)
         _legend(fig, axes, in_title_row=True)
-        fig.savefig(out)
+        _save(fig, out)
         plt.close(fig)
 
 
@@ -272,7 +277,7 @@ def fig_scores_6x6(logs: Logs, out: Path) -> None:
             ax.set_xlabel("training games")
         axes[0, 0].set_ylim(0, 1)
         _legend(fig, axes, in_title_row=True)
-        fig.savefig(out / "f2_scores_appendix.pdf")
+        _save(fig, out / "f2_scores_appendix.pdf")
         plt.close(fig)
 
 
@@ -305,7 +310,7 @@ def fig_selfplay_vs_external(logs: Logs, out: Path, board: int = 6) -> None:
             Line2D([], [], color=INK_2, linestyle=(0, (3, 2)), linewidth=1.1, label="vs previous checkpoint"),
         ]
         _legend(fig, axes, handles)
-        fig.savefig(out / "f3_selfplay_vs_external.pdf")
+        _save(fig, out / "f3_selfplay_vs_external.pdf")
         plt.close(fig)
 
 

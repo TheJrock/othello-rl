@@ -142,6 +142,7 @@ othello-rl/
 │   ├── sweep.py               # launch the 2×2×seeds grid as parallel processes
 │   ├── analyze.py             # runs/ → figures/ + tables/
 │   ├── watch.py               # live progress bars for running experiments (read-only; `make watch`)
+│   ├── backfill.py            # 6×6 endgame accuracy from checkpoints, for runs that trained without it
 │   └── export_demo.py         # chosen run → web/public/
 ├── tests/
 │   ├── conftest.py            # NotImplementedError → "skipped: TODO" until Dec 1, so CI stays green
@@ -152,7 +153,7 @@ othello-rl/
 │   ├── test_selfplay.py       # A-mode step: opponent reply ends game, auto-pass
 │   └── test_export.py         # torch vs ONNX outputs
 ├── runs/                      # gitignored; rsync from the server
-│   └── e2-6x6/env-pool/seed0/{config.yaml, meta.json, log.jsonl, stdout.log, ckpt/g0005000.pt …}
+│   └── e2-6x6/env-pool/seed0/{config.yaml, meta.json, log.jsonl, stdout.log, ckpt/g0005000.pt …, backfill.jsonl?}
 ├── figures/  tables/          # written by analyze.py; committed (the report uses them)
 ├── web/
 │   ├── package.json  vite.config.ts  index.html
@@ -170,6 +171,7 @@ othello-rl/
 - **The 2×2 lives in config, not in code forks.** `target` is read only in `selfplay.py` and `targets.py`; `sampling` is read only in `pool.py`. A grep then shows the conditions differ only there (useful in the report).
 - **`data/` is the benchmark.** Every run evaluates on identical, committed positions. Never regenerate it mid-experiment.
 - **Checkpoints are the pool.** `pool.py` loads snapshots from the run's own `ckpt/`, and `regret.py` uses the same files (D8). There is no separate storage.
+- **`log.jsonl` is append-only and written only by training.** A metric computed later from the checkpoints goes in the run's `backfill.jsonl` (`scripts/backfill.py`, one row per eval point keyed by `games`). `rundir.read_log` merges it in, and a value training logged always wins. *(Added Nov 25 for the 6×6 pilots' endgame accuracy.)*
 - **`meta.json`** per run: git commit hash, host, start time, torch version. Run directories are named `<exp>/<target>-<sampling>/seed<k>` (exp = `dev`, `e1-4x4`, `pilot-6x6`, `e2-6x6`, `pilot-8x8`, `e6-8x8`) so `analyze.py` can glob them.
 
 ### 4.2 Engine (`engine.py`)
@@ -383,7 +385,7 @@ So "≥ 95% vs random" can only apply from the start position. On the 4×4 bank 
   - *Implemented Nov 24* (`evaluate.summarize_run`, tested on hand-computed curves).
     - **Max drawdown:** the peak minus the lowest value at or after it.
     - **Forgetting event:** each time the value falls strictly more than 10 points below its running max. A stretch spent below counts once; recovering and falling again counts again.
-    - **Spearman ρ:** over the eval points that have a self-play score, so not game 0.
+    - **Spearman ρ:** over the eval points that have a self-play score (so not game 0), minus the first of them. *(Decided Nov 25.)* That first point is always the first checkpoint (1k games on 4×4, 10k on 6×6) vs the untrained net. It scores ~0.97–0.99 while the external metric is at its lowest, so it says nothing about tracking strength, yet on its own it made ρ 0.05–0.09 more negative. Dropping it is the conservative choice for H3, and doesn't change H3's verdict (ρ is far below 0.7 either way).
     - **On 4×4 the metric is `accuracy_4x4`, not score vs positional.**
     - **Caveats for the report:** with noisy evals, "peak" is biased upward (it's the max of noisy points), so "max drawdown" is too. And a 10-point threshold never fires on 4×4 accuracy, which moves by ~3 points after the peak (E1: 0 events in all 20 runs).
 - **Cross-play matrix:** 15 evenly spaced checkpoints per run, round robin over the opening bank.
@@ -409,7 +411,7 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 |---|---|---|---|
 | E0 | 4×4 supervised sanity check: fit the net to exact solver values (separates RL bugs from capacity issues) | 1 | Nov 24, only if stuck |
 | E1 | 4×4 2×2 | 4 × 5 seeds = 20 (minutes each) | ~~Launch Nov 25~~ Done Nov 24: 20/20 runs in 26 min (results below) |
-| P | 6×6 pilots, 400k games (their curves set E2's budget) | 4 × 1 seed | Launch Nov 25 on the laptop GPU (~6–7 h sharing it with P8). No endgame accuracy during training: it's backfilled from their checkpoints once the set exists |
+| P | 6×6 pilots, 400k games (their curves set E2's budget) | 4 × 1 seed | Launch Nov 25 on the laptop GPU (~6–7 h sharing it with P8). No endgame accuracy during training: backfilled from their checkpoints on Nov 25 (`make backfill EXPS=pilot-6x6`, ~2 s per run on the CPU) |
 | E2 | 6×6 2×2 | 4 × 3 seeds = 12 | Launch Dec 1 on the laptop GPU, 4 at a time: ~8½ h at 200k games, ~16½ h at 400k |
 | E3 | Cross-play matrices | — | Dec 1 (4×4) / Dec 4 (6×6) |
 | E5 | Checkpoint regret (self-history + held-out; + true regret on 4×4) | — | Dec 2 (4×4) / Dec 4 (6×6) |
@@ -445,7 +447,7 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
     - Loss is ~2× higher with the big buffer (A 0.050 vs 0.023, N 0.0068 vs 0.0029): older, more varied data is harder to fit, and fitting it helps.
     - So the cause is flushing out older data (high-ε, from earlier policies), not ε itself.
 - **On 4×4, buffer size matters more than the pool.** Keeping all the data adds ~3 points, as much as the choice of target (+2.7) and far more than pool vs naive (+0.2). This fits D1's note that the buffer is an *implicit pool* of recent past selves. Lengthening that window on the data side helps, while the explicit opponent pool doesn't. The current buffers stay for P (and E1 stands as run), the same for every condition (D1: never tune buffer size per condition). Whether to raise the 6×6 buffer for E2 is a shared-knob decision at the Nov 30 review, once the 6×6 pilots show whether they decline too. Their buffer is a *smaller* share of training than 4×4's (~10% vs ~27%), so if the flush matters, it should matter at least as much there. Memory allows it: a 6×6 buffer of all 400k games' ~12.8M transitions is ~3.4 GB per run, on a 32 GB laptop.
-- **H3 on 4×4: the self-play score doesn't see the decline.** The score vs the previous checkpoint is above 0.5 only in the first ~4k games (0.60–0.66 at 1k). From 6k games on it stays at 0.47–0.54 in every run, including through the 2.3-point decline. Its per-run Spearman ρ with accuracy averages −0.2 to −0.3, and with score vs positional −0.14 to −0.24, far from H3's ρ > 0.7. Consecutive checkpoints differ too little (~0.1 point of accuracy per interval) for a match to see. Whether earlier checkpoints beat the final one in play is E3's question.
+- **H3 on 4×4: the self-play score doesn't see the decline.** The score vs the previous checkpoint is above 0.5 only in the first ~4k games (0.60–0.66 at 1k). From 6k games on it stays at 0.47–0.54 in every run, including through the 2.3-point decline. Its per-run Spearman ρ (§4.7, first point dropped) averages −0.07 to −0.25 per condition with accuracy, and −0.04 to −0.18 with score vs positional: near zero to weakly negative, far from H3's ρ > 0.7. A few single seeds are slightly positive (up to +0.12). *(Nov 25: these were −0.16 to −0.31 and −0.14 to −0.24 before the first point was dropped.)* Consecutive checkpoints differ too little (~0.1 point of accuracy per interval) for a match to see. Whether earlier checkpoints beat the final one in play is E3's question.
 - **Match scores are much coarser than exact accuracy.** N vs A is +2.7 points of accuracy (p ≈ 4·10⁻¹⁰), while score vs random is identical (0.73 in both rows). A 240-game match's interval is ~±6 points. On 6×6, without an exact metric, small effects will need the seeds to show.
 - **Implication for the pilots and E2.** The same shape may appear on 6×6: ε reaches its floor at 80k games, and the buffer holds ~40k games. So when setting E2's budget, read the pilot curves for a peak, not only a plateau. Also, `eps_decay_frac` and the replay rule scale with `games`. A 200k E2 run reaches ε's floor at 40k, not at the pilot's 80k, so the pilot curve at 200k only approximates a 200k run.
 - **Other logged differences.** Pool learners score 0.53–0.55 in training games, because they beat older snapshots. A-pool's loss is 0.032 vs A-naive's 0.024: more varied opponents make A's targets noisier. N's loss is 0.003.
@@ -516,7 +518,8 @@ Self-play, inference, and evaluation come on top. **On CPU only, gradient steps 
 - **Style:** the dataviz skill's reference palette, slots 1–2. It passes the colour-blind and contrast checks on white: CVD ΔE 24.7, normal-vision ΔE 33.6, and both colours ≥ 3:1 against the page.
 - **Size:** 5.5 in × 1.6–1.7 in.
 - **T1 outputs:** a bare booktabs tabular with the report's condition macros, plus a plain-text copy (`t1_summary.txt`). Condition rows are mean ± sd over seeds; gap rows (pool − naive per target, and H4 = env gap − negamax gap) are difference of means ± SE.
-- **Commit `figures/` and `tables/` only for finished experiments.**
+- **Commit `figures/` and `tables/` only for finished experiments.** The report includes them by path, and `runs/` isn't committed, so they're how the results reach the repo. A pilot's or a running experiment's figures are snapshots that would go stale.
+- **Figures are reproducible byte for byte:** PDFs are saved without a creation date, so redrawing unchanged data leaves committed files unchanged in git. *(Added Nov 25; the redraw changed E1's committed PDFs once.)*
 - **Tests:** `tests/test_analyze.py` and `tests/test_evaluate.py`. Nine planted bugs (drawdown window, event counting, threshold strictness, final, curve alignment, gap and H4 signs, the T1 cutoff, std from one seed) were all caught.
 
 ---
@@ -648,7 +651,7 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 - [ ] Set E2's budget from the pilot curves: 200k if they've plateaued by then, up to 400k if still rising. Rescale `replay_capacity` and `eval_every` with it (§4.5 budget rule).
 - [ ] *(Before the Dec 1 code freeze, optional)* Smooth progress bars: have `train.py` overwrite a one-line `progress.json` in the run directory every round (games, wall time). `scripts/watch.py` then reads it when present, so bars move every round instead of only at eval points. The run's results don't change. *(Noted Nov 25, when the watcher was built.)*
 - [ ] **8×8 gate 2** (§4.8): go/no-go on E6. If go, set E6's budget (≤ 1M) from P8's curve and rescale likewise.
-- [x] 6×6 endgame solver + 500-position test set, cached. Then set `endgame_set: data/endgame6.jsonl` in `configs/6x6.yaml` again (before E2), and backfill the pilots' endgame accuracy from their checkpoints. *(Done Nov 24, §4.4, and `endgame_set` restored. Still to do: backfill the pilots once they finish.)*
+- [x] 6×6 endgame solver + 500-position test set, cached. Then set `endgame_set: data/endgame6.jsonl` in `configs/6x6.yaml` again (before E2), and backfill the pilots' endgame accuracy from their checkpoints. *(Done Nov 24, §4.4, and `endgame_set` restored. Pilots backfilled Nov 25 with `scripts/backfill.py` into each run's `backfill.jsonl`, §4.1. A test shows the backfill reproduces training's logged values exactly. On the pilots' real checkpoints, CPU and GPU agree on 163 of 164, and the other differs by one position.)*
 
 **Tue Dec 1** (~4 h) — **M2: experiment code freeze**
 - [ ] Launch **E2** (6×6 2×2, 12 runs, endgame accuracy in eval): `caffeinate -i make sweep-6x6` on the laptop GPU, four at a time in three batches, ~8½ h at 200k or ~16½ h at 400k.

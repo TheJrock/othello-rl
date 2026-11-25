@@ -10,7 +10,7 @@ SERVER ?=
 SERVER_DIR ?= othello-rl
 RUN ?=
 
-.PHONY: help setup test test-py test-web data ladder sweep-4x4 sweep-4x4-old replay-4x4 pilot-6x6 pilot-6x6-old sweep-6x6 pilot-8x8 sweep-8x8 sync watch figures report demo web-dev
+.PHONY: help setup test test-py test-web data ladder sweep-4x4 sweep-4x4-old replay-4x4 pilot-6x6 pilot-6x6-old sweep-6x6 pilot-8x8 sweep-8x8 sync watch backfill figures report demo web-dev
 
 help:  ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -85,6 +85,9 @@ watch:  ## live progress bars for every experiment with a run still going (read-
 # Experiments to draw. In-progress ones work too, e.g. `make figures EXPS=pilot-6x6`, but commit
 # figures/ and tables/ only for finished experiments (the report includes them by path).
 EXPS ?= e1-4x4 e2-6x6
+
+backfill:  ## 6x6 endgame accuracy from checkpoints, for runs that trained without it: make backfill EXPS=pilot-6x6
+	$(PY) scripts/backfill.py --exp $(EXPS)
 
 figures:  ## runs/ -> figures/ and tables/ (EXPS=... to choose experiments)
 	$(PY) scripts/analyze.py --exp $(EXPS)

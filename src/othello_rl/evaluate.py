@@ -285,7 +285,11 @@ def summarize_run(
     forgetting_events  times the value falls more than `threshold` below its running max (each
                        entry into that state counts once; recovering and falling again counts again)
     spearman           Spearman ρ between score_selfplay and `key` over the eval points that have
-                       both (not game 0); NaN if either is constant or there are fewer than 3
+                       both, except the first of them; NaN if either is constant or fewer than 3
+                       points are left. Game 0 has no self-play score, and the first self-play
+                       score is the first checkpoint vs the untrained net: always ~0.97–0.99,
+                       at the metric's lowest point, so it would pull ρ negative on its own
+                       (spec §4.7, decided Nov 25)
 
     Rows without `key` are skipped, so this also works on a run that is still going."""
     from scipy.stats import spearmanr  # here, not at the top: training imports this module
@@ -301,6 +305,7 @@ def summarize_run(
     entries = int(below[0]) + int(np.sum(below[1:] & ~below[:-1]))
 
     pairs = np.array([(r["score_selfplay"], r[key]) for r in rows if key in r and "score_selfplay" in r])
+    pairs = pairs[1:]  # drop the first checkpoint vs the untrained net (see the docstring)
     rho = float("nan")
     if len(pairs) >= 3 and pairs[:, 0].std() > 0 and pairs[:, 1].std() > 0:
         rho = float(spearmanr(pairs[:, 0], pairs[:, 1]).statistic)

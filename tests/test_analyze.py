@@ -68,6 +68,16 @@ def test_figures_are_written(logs, tmp_path):
         assert (tmp_path / f"{name}.pdf").stat().st_size > 1000
 
 
+def test_redrawing_the_same_data_gives_the_same_bytes(logs, tmp_path):
+    # Committed figures must only show up in `git status` when their content changes (no timestamp).
+    first = tmp_path / "f5_endgame.pdf"
+    analyze.fig_endgame_6x6(logs, tmp_path)
+    before = first.read_bytes()
+    analyze.fig_endgame_6x6(logs, tmp_path)
+    assert first.read_bytes() == before
+    assert b"/CreationDate" not in before  # the timestamp would differ on any later redraw
+
+
 def test_missing_metric_is_a_skip_not_a_crash(tmp_path):
     no_endgame = {("env", "naive"): [_log(4, 0.5, 0, endgame=False)]}
     with pytest.raises(analyze.Skip):

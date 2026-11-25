@@ -328,15 +328,17 @@ def test_summarize_run_forgetting_threshold_is_strict():
     assert summarize_run(_rows([0.5, 0.9, 0.79]))["forgetting_events"] == 1
 
 
-def test_summarize_run_spearman_skips_game_0_and_flags_constants():
-    values = [0.1, 0.3, 0.5, 0.4, 0.7]
-    assert summarize_run(_rows(values, selfplay=[None, 0.6, 0.7, 0.65, 0.8]))["spearman"] == pytest.approx(
-        1.0
-    )
-    assert summarize_run(_rows(values, selfplay=[None, 0.8, 0.7, 0.75, 0.6]))["spearman"] == pytest.approx(
-        -1.0
-    )
-    assert np.isnan(summarize_run(_rows(values, selfplay=[None, 0.5, 0.5, 0.5, 0.5]))["spearman"])
+def test_summarize_run_spearman_skips_the_first_selfplay_point_and_flags_constants():
+    def rho(values, selfplay):
+        return summarize_run(_rows(values, selfplay=[None, *selfplay]))["spearman"]
+
+    values = [0.1, 0.3, 0.5, 0.4, 0.7, 0.6]
+    # The first self-play point (the first checkpoint vs the untrained net) is ~0.99 while the
+    # metric is at its lowest. Counted, it would pull ρ below 1; it's dropped, so ρ = 1 exactly.
+    assert rho(values, [0.99, 0.6, 0.55, 0.7, 0.65]) == pytest.approx(1.0)
+    assert rho(values, [0.99, 0.7, 0.75, 0.6, 0.65]) == pytest.approx(-1.0)
+    assert np.isnan(rho(values, [0.99, 0.5, 0.5, 0.5, 0.5]))  # constant once the first is dropped
+    assert np.isnan(rho(values[:4], [0.99, 0.6, 0.55]))  # only 2 points left
 
 
 def test_summarize_run_other_keys_and_missing_rows():

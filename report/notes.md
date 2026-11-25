@@ -62,10 +62,28 @@ The full details and numbers live in `docs/spec.md` (section refs in brackets).
 - First readings on the 6×6 pilot checkpoints: untrained 46%, 72–77% at 10k games, ~78–79% at 20k. Plenty of headroom.
 - The exact solver turned out cheap (~0.1 s per 12-empty position, in plain Python). Deeper endgames (14–16 empties) would be feasible if a harder set is ever wanted.
 
+### 6×6 pilots: endgame accuracy (backfilled Nov 25, 1 seed per condition)
+- **Fast rise, then flat:** 46% untrained, 72–77% at 10k games, 80–85% by ~80–100k, then flat to 400k. In every run the mean over 200k–400k equals the mean over 100k–200k (within 0.004). **No peak-then-decline on 6×6.** Drawdowns of 0.024–0.042 are within eval noise (one eval's SE ≈ 0.017 at 500 positions).
+- **Ordering over 200k–400k:** negamax-pool 0.850 > negamax-naive 0.844 > env-pool 0.833 > env-naive 0.815.
+  - N beats A by ~2–3 points, the same direction and size as E1 on 4×4 (+2.7).
+  - Pool beats naive by 0.6–1.8 points.
+  - **Only one seed per condition:** a hint, not a result. E2's 3 seeds decide.
+- **Endgame accuracy separates the conditions better than score vs positional,** which sits at ~0.89–0.90 for all four (near its ceiling). Lead with endgame accuracy for 6×6 in the report. At 10k games it already shows N ahead (0.75–0.77 vs 0.72).
+- **The self-play score vs endgame accuracy:** Spearman ρ −0.18 to −0.44 per run (first point dropped, as in T1). The H3 pattern holds on 6×6 as well.
+- Backfill checks: a test shows it reproduces training's logged values exactly, and CPU vs GPU evaluation agree on 163 of 164 pilot checkpoints (the other differs by one position of 500).
+
+### 8×8 pilot P8 (midpoint, 500k of 1M games, Nov 25)
+- **Gate 2's 8×8 bar is already cleared:** ~0.90 vs positional since 200k games (95% CI at 500k: 0.81–0.91), far above the 50% bar.
+- **Plateau vs positional since ~200k**, which is exactly where ε reaches its floor (0.2 × 1M). Since then it has stayed between 0.87 and 0.93, all within eval noise. No decline yet, though the last two points (0.89, 0.87) are the lowest since 180k. The budget caveat below applies: a shorter E6 would hit the ε floor sooner.
+- **Score vs greedy fell while score vs positional rose:** 0.92 at 20k–60k (CI 0.87–0.95 at 40k), down to 0.70–0.83 from 280k on (CI 0.64–0.77 at 320k). The CIs don't overlap, so it's real. 6×6 shows nothing like it: all four pilots stay at ~0.97 vs greedy throughout. So on 8×8 the agent got stronger against one fixed opponent and weaker against another. That's non-transitivity, and a good argument for using several external references rather than one (H3-adjacent). A guess, untested: once ε is low, self-play lines stop covering the greedy player's flip-maximising openings.
+- **`mean_q` fell from 0.75 to ~0.44 and flattened after ~300k.** Q is the value of greedy play against an ε-greedy opponent, so it should fall as the opponent's ε falls and stop once ε stops (plus a lag, since the 6M buffer holds ~100k games). It's a consistency check on the A target, not a strength measure.
+- Pace: 6.4 games/s while sharing the GPU with the four 6×6 pilots, 15.9 alone. The checkpoint-vs-previous score averages ~0.5 after 240k; the 480k checkpoint lost to the 460k one (0.38, CI 0.31–0.45).
+
 ### E1's summary table (T1, `tables/e1-4x4/`)
 - **H4 on 4×4 is exactly null:** env gap − negamax gap is +0.000 ± 0.005 in final accuracy. Pool − naive is +0.004 under both targets.
 - **No forgetting events at the 10-point threshold in any of the 20 runs.** The post-peak decline is real but only ~3 points (max drawdown 0.026–0.038). If forgetting matters on 4×4, a smaller threshold would be needed, but don't change the definition after seeing the data. Just report that the threshold doesn't fire on 4×4.
 - **Spearman ρ between the self-play score and accuracy is negative in every condition** (−0.16 to −0.31). Clear H3 support: the self-play score doesn't track strength.
+  - *Updated Nov 25:* the first point is always the 1k net vs the untrained net (self ≈ 0.98, accuracy at its lowest), and it dragged ρ down. **T1 now drops it** (spec §4.7). New range: −0.07 to −0.25 per condition, and a few single seeds are slightly positive (up to +0.12). Still nowhere near H3's ρ > 0.7, so the conclusion stands, but say "≈ 0 to weakly negative", not "negative". When defining ρ in the report, say the first point is dropped and why.
 - **Caveat:** "peak" and "max drawdown" are biased upward by eval noise, since the peak is the max of noisy points. The seed bands in F1 show how big that noise is.
 
 ### Settings change (Nov 24)
@@ -85,12 +103,14 @@ The full details and numbers live in `docs/spec.md` (section refs in brackets).
 
 ## Come back to
 - [x] **Buffer test** (Nov 24, `make replay-4x4`): confirmed, see above. E4 is now "buffer size", with a bigger buffer rather than ¼ size.
-- [ ] Do the 6×6 pilots show the same peak-then-decline? On 6×6, ε reaches its floor at 80k games and the buffer holds ~40k games, a smaller share of training than on 4×4. Read the curves for a peak, not just a plateau, when setting E2's budget (Nov 30).
-- [ ] If they do: raise E2's buffer for all conditions (one of the ≤ 2 shared knobs)? A full 6×6 buffer is ~3.4 GB per run, fine on 32 GB. Could also run a 6×6 big-buffer pilot to check first.
-- [ ] Backfill the 6×6 pilots' endgame accuracy from their checkpoints once they finish (they ran without the set).
+- [x] Do the 6×6 pilots show the same peak-then-decline? **No** (Nov 25): endgame accuracy and score vs positional both plateau from ~100k to 400k, with no decline (see "6×6 pilots" above). On 6×6, ε reaches its floor at 80k games and the buffer holds ~40k games.
+- [x] ~~If they do: raise E2's buffer for all conditions?~~ Not needed on this evidence. Keep the buffer setting for E2 unless E2's own curves say otherwise.
+- [x] Backfill the 6×6 pilots' endgame accuracy from their checkpoints (Nov 25, `make backfill EXPS=pilot-6x6`).
+- [x] T1's Spearman ρ: drop the first self-play point (always the 1k/10k net vs the untrained one)? **Yes** (Nov 25). E1's T1 regenerated.
 - [ ] Optional: run E1's full 2×2 with the big buffer on 4×4 (~26 min). Does the pool matter even less once the buffer keeps everything? D1's implicit-pool idea predicts yes.
 - [ ] **E3 on 4×4:** does an E1 run's ~10k-game checkpoint beat its final checkpoint in real games? If so, that's a concrete H2/H3 example: a decline the self-play score never flagged. Cheap once `crossplay_matrix` exists.
 - [ ] Caveat when picking E2's budget from the pilots: the ε schedule and the buffer scale with `games`. A 200k run reaches ε's floor at 40k (the pilot at 80k), so the pilot's curve at 200k only approximates a 200k run.
+- [ ] P8's fall vs greedy: when P8 finishes, play its 60k checkpoint against its final one (crossplay). If the early checkpoint wins, the self-play score missed a regression. Also check whether the fall vs greedy continues past 500k.
 - [ ] Does pool's extra coverage matter on 6×6, where the state space is far larger than 4×4's? That's the real test of H1.
 - [ ] A-pool's flat curve: is pool slowing A's early learning slightly (lower peak), or protecting it from the decline?
 - [ ] If citing a training-time pool sampling rule, check how TiZero (MADRID's ref. [29]) samples opponents. [§4.6]
