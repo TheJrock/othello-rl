@@ -66,14 +66,20 @@ pilot-6x6:  ## P: 6x6, 2x2 conditions x 1 seed, 400k games (sets the E2 budget, 
 pilot-6x6-old:  ## E7: the 6x6 pilots with the pre-Nov-24 settings (only with spare compute)
 	$(PY) scripts/sweep.py --config configs/6x6.yaml --exp e7-6x6-old --seeds 0 --jobs $(JOBS) -- --device $(DEVICE) $(OLD_KNOBS)
 
-sweep-6x6:  ## E2: 6x6, 2x2 conditions x 3 seeds
+sweep-6x6:  ## E2: 6x6, 2x2 conditions x 3 seeds, 400k games (~16.5 h, 4 at a time)
 	$(PY) scripts/sweep.py --config configs/6x6.yaml --exp e2-6x6 --seeds 0 1 2 --jobs $(JOBS) -- --device $(DEVICE)
 
 pilot-8x8:  ## P8: 8x8 env-naive, 1 seed, 1M games (gate 1 passed Nov 24, spec §4.8). Needs a GPU
 	$(PY) scripts/sweep.py --config configs/8x8.yaml --exp pilot-8x8 --targets env --samplings naive --seeds 0 --jobs 1 -- --device $(DEVICE)
 
-sweep-8x8:  ## E6: 8x8 env-naive + env-pool, 1 seed; gate 2 must pass first. Needs DEVICE=mps or cuda
-	$(PY) scripts/sweep.py --config configs/8x8.yaml --exp e6-8x8 --targets env --seeds 0 --jobs $(JOBS) -- --device $(DEVICE)
+# E6's env-naive seed 0 is P8: same config, seed and training code (verified Nov 25), so rerunning it
+# would reproduce P8. It's copied in when present, and the sweep skips any run that already has a log;
+# without P8 (e.g. a fresh clone) the sweep trains it like the others.
+sweep-8x8:  ## E6: 8x8 env-naive + env-pool, seeds 0-1, 1M games (gate 2 passed Nov 25). Needs DEVICE=mps or cuda
+	@if [ ! -e runs/e6-8x8/env-naive/seed0 ] && [ -e runs/pilot-8x8/env-naive/seed0/log.jsonl ]; then \
+		mkdir -p runs/e6-8x8/env-naive && cp -Rp runs/pilot-8x8/env-naive/seed0 runs/e6-8x8/env-naive/seed0 && \
+		echo "copied P8 -> runs/e6-8x8/env-naive/seed0"; fi
+	$(PY) scripts/sweep.py --config configs/8x8.yaml --exp e6-8x8 --targets env --seeds 0 1 --jobs $(JOBS) -- --device $(DEVICE)
 
 sync:  ## copy runs/ back from the server: make sync SERVER=user@host
 	@test -n "$(SERVER)" || (echo "usage: make sync SERVER=user@host [SERVER_DIR=othello-rl]"; exit 1)

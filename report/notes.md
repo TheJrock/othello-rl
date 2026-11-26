@@ -104,6 +104,8 @@ The full details and numbers live in `docs/spec.md` (section refs in brackets).
 - If there's time, E7 reruns the old settings for a comparison. [§4.5, §4.8]
 
 ### Compute (appendix / reproducibility)
+- **E6's A-naive seed 0 is the P8 pilot**, copied in rather than rerun: same config, seed and training code, and runs are deterministic per seed. Its `meta.json` shows P8's commit (4d458d1) and its config says `exp: pilot-8x8`. Say so in the appendix.
+- **E2 and E6 launched early (Nov 25)**, as one chain over Thanksgiving, once the pilots had answered the Nov 30 questions. Training code is frozen from that launch.
 - Everything trains on the laptop's Apple GPU (M1 Pro, `mps`). Even 4×4 was too slow on CPU: 50 ms per backward pass vs 3.8 ms on the GPU, and more CPU threads made it slower for this small net.
 - Four runs sharing the GPU get ~2× the total throughput of one run alone.
 - The server (2 ARM cores, no GPU) is ~39× slower than the laptop GPU, so it isn't used for the main runs.

@@ -7,7 +7,7 @@ channels: 64
 layers: 4
 
 # self-play and replay
-games: 400000            # pilot budget (Nov 24): ~5.5 h/run with 4 sharing the laptop GPU. E2's budget is set Nov 30 from the pilot curves (spec §4.8)
+games: 400000            # E2's budget (decided Nov 25 from the pilots, spec §4.8): the pilots plateaued by ~100k with no decline to 400k; 400k keeps the config they validated. ~16.5 h for E2's 12 runs, 4 at a time
 parallel_games: 256
 replay_capacity: 1280000    # ~10% of training's transitions (400k games × 32, both sides, spec D2); ~340 MB
 augment: true

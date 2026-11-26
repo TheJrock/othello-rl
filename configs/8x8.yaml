@@ -8,7 +8,7 @@ channels: 64
 layers: 5
 
 # self-play and replay
-games: 1000000           # gate 1 (Nov 24): ~18 h alone on the laptop GPU. E6's budget is set at gate 2 from P8's curve (spec §4.8)
+games: 1000000           # E6's budget (gate 2 passed Nov 25, spec §4.8): P8's score vs greedy was still falling at 1M, the dynamic E6's pool run is compared on. ~22 h alone on the laptop GPU
 parallel_games: 256
 replay_capacity: 6000000 # ~10% of training's transitions (1M games × 60, both sides, spec D1, D2); ~2.8 GB; rescale if `games` changes
 augment: true

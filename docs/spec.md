@@ -7,8 +7,8 @@ Companion to `docs/proposal.md` · Written Wed Nov 18, 2026 · Rev. 4 (2×2 desi
 | Tue Nov 24 | 8×8 gate 1: throughput (§4.8) |
 | **Wed Nov 25** | **M1** — 4×4 DQN learning under both target types and checked against the exact solver; 4×4 sweep and 6×6 pilot runs launched to run over Thanksgiving, plus the 8×8 pilot (gate 1 passed Nov 24), all on the laptop GPU |
 | Thu Nov 26 – Sat Nov 28 | Thanksgiving: light days, no new code on the critical path |
-| Mon Nov 30 | 8×8 gate 2: pilot review (§4.8) |
-| **Tue Dec 1** | **M2** — Experiment code frozen; final 6×6 runs launched (plus the 8×8 pair if gate 2 passed) |
+| Mon Nov 30 | 8×8 gate 2: pilot review (§4.8). *Done early, Nov 25, once every pilot had finished: passed* |
+| **Tue Dec 1** | **M2** — Experiment code frozen; final 6×6 runs launched (plus the 8×8 pair if gate 2 passed). *Pulled forward: E2 and E6 launch Nov 25 as one chain, and training code is frozen from then* |
 | **Sat Dec 5** | **M3** — All figures final; demo's play view live on your domain |
 | **Thu Dec 10** | Presentation |
 | **Thu Dec 17** | Report due |
@@ -47,7 +47,7 @@ A null result on H1/H2 is still a valid finding ("at this scale, naive self-play
 |---|---|
 | **Must** (Dec 10) | Engine + tests · random/greedy/positional opponents · 4×4 exact solver · DQN with both target types · 2×2 on 4×4 (5 seeds) and 6×6 (3 seeds; fallback in §4.8) · external-metric and self-play curves · demo play view · deck |
 | **Should** | MADRID-style checkpoint regret analysis (§4.7) · 6×6 endgame-accuracy metric · cross-play matrices · "Watch it learn" view (can slip into Dec 11–16) |
-| **Could** | **8×8 A pair (A-naive vs A-pool, 1 seed each), only if both gates pass (D9, §4.8)** · snapshot-vs-snapshot autoplay in the demo · let demo visitors pick an A or N agent · 4×4 "perfect play" coach mode · replay-buffer-size ablation for A-naive (§3 D1) · pool-mix ablation (80/20) |
+| **Could** | **8×8 A pair (A-naive vs A-pool, ~~1 seed~~ 2 seeds each since Nov 25), only if both gates pass (D9, §4.8)** · snapshot-vs-snapshot autoplay in the demo · let demo visitors pick an A or N agent · 4×4 "perfect play" coach mode · replay-buffer-size ablation for A-naive (§3 D1) · pool-mix ablation (80/20) |
 | **Won't** | Anything on 8×8 beyond the gated A pair: the N row, more seeds, cross-play, regret, endgame accuracy (future work) · MAP-Elites/CMA-ME search. Small Othello position sets can be enumerated or sampled directly (§4.7). |
 
 ---
@@ -273,7 +273,7 @@ Replay tuple: `(planes_s, a, r, planes_s', legal_mask_s', done)`. At sample time
 
 | | 4×4 | 6×6 | 8×8 (gated, D9) |
 |---|---|---|---|
-| Training games | 30k | 400k for the pilots (Nov 24). E2: 200k–400k, set Nov 30 from the pilot curves | 1M for P8 (gate 1, Nov 24). E6: ≤ 1M, set at gate 2 from P8's curve |
+| Training games | 30k | 400k for the pilots (Nov 24). E2: 400k (decided Nov 25 from the pilot curves) | 1M for P8 (gate 1, Nov 24). E6: 1M (gate 2, Nov 25) |
 | Parallel games | 128 | 256 | 256 |
 | Replay capacity | 100k transitions (~13 MB) | 1.28M transitions (≈ last 10% of training; ~340 MB) | 6M transitions (≈ last 10% of training; ~2.8 GB) |
 | Batch / optimizer | 256 / Adam 3e-4 | same | same |
@@ -412,12 +412,12 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 | E0 | 4×4 supervised sanity check: fit the net to exact solver values (separates RL bugs from capacity issues) | 1 | Nov 24, only if stuck |
 | E1 | 4×4 2×2 | 4 × 5 seeds = 20 (minutes each) | ~~Launch Nov 25~~ Done Nov 24: 20/20 runs in 26 min (results below) |
 | P | 6×6 pilots, 400k games (their curves set E2's budget) | 4 × 1 seed | Launch Nov 25 on the laptop GPU (~6–7 h sharing it with P8). No endgame accuracy during training: backfilled from their checkpoints on Nov 25 (`make backfill EXPS=pilot-6x6`, ~2 s per run on the CPU) |
-| E2 | 6×6 2×2 | 4 × 3 seeds = 12 | Launch Dec 1 on the laptop GPU, 4 at a time: ~8½ h at 200k games, ~16½ h at 400k |
+| E2 | 6×6 2×2 | 4 × 3 seeds = 12 | 400k games (decided Nov 25). Launch Nov 25 on the laptop GPU, 4 at a time, ~16½ h, chained with E6: `caffeinate -i sh -c 'make sweep-6x6 && make sweep-8x8'` |
 | E3 | Cross-play matrices | — | Dec 1 (4×4) / Dec 4 (6×6) |
 | E5 | Checkpoint regret (self-history + held-out; + true regret on 4×4) | — | Dec 2 (4×4) / Dec 4 (6×6) |
 | E4 | *(Could)* ~~A-naive replay-buffer ablation (¼ size)~~ Replay-buffer size, or pool mix 80/20. *4×4 part done Nov 24 (`make replay-4x4`): a buffer that keeps every transition removes E1's post-peak decline (results below). A 6×6 version, if any, waits for the pilots* | 3 seeds | Only with spare compute |
 | P8 | *(Could)* 8×8 pilot: A-naive, 1M games (`make pilot-8x8`) | 1 | Launched Nov 24 alongside P (gate 1 passed Nov 24). **Done Nov 25 in 22h09m:** ~0.90 vs positional from 200k games on (final 0.88), while the score vs greedy fell from 0.92 to ~0.68 |
-| E6 | *(Could)* 8×8 A pair: A-naive vs A-pool on the frozen code (`make sweep-8x8`) | 2 × 1 seed | Launch Dec 1 (Dec 2 at the latest), only if gate 2 passed |
+| E6 | *(Could)* 8×8 A pair: A-naive vs A-pool on the frozen code (`make sweep-8x8`) | 2 × 2 seeds; A-naive seed 0 is P8 | 1M games (gate 2 passed Nov 25). Starts when E2 finishes (same chain): 3 new runs sharing the GPU, ~1½ days (estimate) |
 | E7 | *(Could)* Settings comparison: rerun with the pre-Nov-24 settings (`eps_end` 0.05, `target_update_every` 1,000) on the same code, compared with E1 / P. 4×4: `make sweep-4x4-old` (all 4 conditions × 5 seeds, ~5 min per run on `mps`). 6×6: `make pilot-6x6-old` (1 seed per condition, GPU hours) | 20 (4×4) + 4 (6×6) | 4×4 any time after E1 launches; 6×6 only with spare compute, never ahead of E2 |
 
 *E1 results (Nov 24, `runs/e1-4x4/`).* Means ± sd over 5 seeds of the last 10 eval points (games 21k–30k), except the last row. Scores are from 240-game matches through the opening bank, greedy.
@@ -481,7 +481,7 @@ Several 6×6 runs sharing the laptop GPU (2 torch threads each): 2 at once take 
 
 - **6×6:** 200k games fits the 6 h limit easily on the laptop GPU at `transitions_per_grad_step: 16`, so no fallback is needed there. On a CPU, 16 doesn't fit (8.6 h even at the best thread count), and 32 does (4.4–5.3 h).
 - **8×8:** 500k games takes ~9 h on the laptop GPU alone, so a 24 h budget fits ~1.3M games. CPU is out (≥ 92 h).
-- **Budgets (decided Nov 24).** The holiday leaves spare GPU time, so the pilots get generous budgets, and the experiments' budgets are set on Nov 30 from the pilots' curves instead of guessed now. 6×6 pilots: 400k games, ~3 h alone or ~5.5 h with four sharing the GPU. E2 is then 200k–400k: ~8½–16½ h for all 12 runs, four at a time, either way done before the Dec 3 fallback deadline. P8: 1M games, ~18.4 h alone on the GPU. E6 is ≤ 1M, set at gate 2. Replay and eval spacing follow the budget rule in §4.5.
+- **Budgets (decided Nov 24).** The holiday leaves spare GPU time, so the pilots get generous budgets, and the experiments' budgets are set on Nov 30 from the pilots' curves instead of guessed now. 6×6 pilots: 400k games, ~3 h alone or ~5.5 h with four sharing the GPU. E2 is then 200k–400k: ~8½–16½ h for all 12 runs, four at a time, either way done before the Dec 3 fallback deadline. P8: 1M games, ~18.4 h alone on the GPU. E6 is ≤ 1M, set at gate 2. Replay and eval spacing follow the budget rule in §4.5. *(Decided early, Nov 25: E2 400k, E6 1M with 2 seeds per condition. See the Nov 30 timeline items.)*
 - **Server (measured Nov 24):** 2 ARM cores (Neoverse-N1, aarch64), ~11 GB RAM, no GPU. With 1 torch thread: 6×6 self-play 7.7 / 9.1 ms per game, gradient step 445 ms, eval 3.0 s, so a 200k-game run takes **50 h** (25 h at tpgs 32). 8×8: 26 / 29 ms per game, 783 ms per step, 11.3 s per eval point, so 500k games take **412 h**. That's ~5× slower per core than the laptop CPU and ~39× slower than the laptop GPU. **Decision: E1, P, E2, P8 and E6 all run on the laptop GPU.** The server is only useful for low-priority 4×4 work such as E7's 4×4 half, one run at a time so the user's sites keep a core.
 - **`transitions_per_grad_step` stays at 16** for every condition. The 32 fallback was only for CPU-only training, which no experiment uses now.
 - **8×8 shares the laptop GPU with E2 by taking turns.** E2 has priority: E6 starts only after E2 finishes. The P8 pilot runs over the holiday next to the 6×6 pilots, which aren't E2.
@@ -490,7 +490,7 @@ Self-play, inference, and evaluation come on top. **On CPU only, gradient steps 
 
 **8×8 gates (D9).** 8×8 runs only if both gates pass. If either fails, 8×8 returns to Won't and nothing else in the plan changes.
 - **Gate 1 (Tue Nov 24, throughput):** measure 8×8 alongside 6×6, then set `games` in `configs/8x8.yaml` (and rescale `replay_capacity` to ≈ 10% of all transitions, both sides, D2). It passes if one 8×8 run of that budget fits in ≤ 24 h on hardware E2 doesn't need. A CPU-only setup fails.
-- **Gate 2 (Mon Nov 30, pilot review):** it passes if (a) the 6×6 pilots learned (≥ 50% vs positional, the §7 bar) and (b) P8 reached ≥ 50% vs positional on 8×8.
+- **Gate 2 (Mon Nov 30, pilot review):** it passes if (a) the 6×6 pilots learned (≥ 50% vs positional, the §7 bar) and (b) P8 reached ≥ 50% vs positional on 8×8. *Passed Nov 25, reviewed early once every pilot had finished: the 6×6 pilots score 0.88–0.92 vs positional, and P8 scores 0.88.*
 - **Cutoffs:** results by Sun Dec 6 earn a slide; results by Mon Dec 14 go in the report; later results are dropped. 8×8 never takes compute from E2, and it never justifies a code change after M2.
 - **Scope:** score vs random/greedy/positional, self-play score (D5), and F9. No cross-play, regret, or endgame metrics on 8×8.
 
@@ -507,7 +507,7 @@ Self-play, inference, and evaluation come on top. **On CPU only, gradient steps 
 | **F7** | **Self-history regret by reference checkpoint index for final naive vs pool agents** (MADRID Fig. 4b analog), plus a regret grid over (empties × disc differential) (Fig. 6 analog) | slides, report |
 | F8 | 4×4: checkpoint-estimated vs true regret | report (slides if time) |
 | T1 | Summary table: §4.7 numbers, mean ± std across seeds, with the (pool − naive) gap per target type (H4) | slides, report |
-| F9 | *(Could, E6)* 8×8: score vs positional and self-play score, A-naive vs A-pool, one seed each (F2/F3 layout, same code) | report; slides if done by Dec 6 |
+| F9 | *(Could, E6)* 8×8: score vs positional and self-play score, A-naive vs A-pool, two seeds each (F2/F3 layout, same code) | report; slides if done by Dec 6 |
 | F10 | *(Could, E7)* 4×4 accuracy vs games (F1 layout), old vs new settings, per condition with seed bands. Does faster value propagation help every condition equally, or does it change the naive-vs-pool gap? | report (discussion or appendix) |
 
 *Implemented Nov 24 (`scripts/analyze.py`, `make figures`; `EXPS=...` picks experiments): F1, F2 (+ `f2_scores_appendix.pdf` with random and greedy), F3, F5, T1.* F4, F7 and F8 wait for `crossplay_matrix` and `regret.py`. Conventions:
@@ -642,20 +642,20 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 **Thu Nov 26 – Sat Nov 28** — Thanksgiving (optional ~2 h Sat)
 - [x] *(optional)* Start the 6×6 endgame solver or the TS engine port. Both are off the training critical path. *(Endgame solver done Nov 24, §4.4.)*
   - *Nov 24: both pilots launched that evening, a day early (P8 at 03:46 UTC, the 6×6 relaunch at 04:48 UTC Nov 25), at commit 243a6cd. Pace: 6×6 ~9 min per 10k games (~6 h per run); P8 ~20 min per 20k games while alone.*
-- [ ] Glance at pilot logs (6×6 and P8); don't change training code.
+- [x] Glance at pilot logs (6×6 and P8); don't change training code. *(Nov 25: both pilots finished early, so the Nov 30 review happened the same day.)*
 
 ### Week 2 — 6×6 experiments and demo (Nov 30 – Dec 5)
 
 **Mon Nov 30** (~4 h)
-- [ ] Review E1 and the pilots. If 6×6 isn't learning, change at most 2 shared knobs (lr, budget, ε schedule), the same for all four conditions.
-- [ ] Set E2's budget from the pilot curves: 200k if they've plateaued by then, up to 400k if still rising. Rescale `replay_capacity` and `eval_every` with it (§4.5 budget rule).
-- [ ] *(Before the Dec 1 code freeze, optional)* Smooth progress bars: have `train.py` overwrite a one-line `progress.json` in the run directory every round (games, wall time). `scripts/watch.py` then reads it when present, so bars move every round instead of only at eval points. The run's results don't change. *(Noted Nov 25, when the watcher was built.)*
-- [ ] **8×8 gate 2** (§4.8): go/no-go on E6. If go, set E6's budget (≤ 1M) from P8's curve and rescale likewise.
+- [x] Review E1 and the pilots. If 6×6 isn't learning, change at most 2 shared knobs (lr, budget, ε schedule), the same for all four conditions. *(Done Nov 25. All four 6×6 pilots learned: 0.88–0.92 vs positional, 0.82–0.85 endgame accuracy, with no decline. No knobs changed.)*
+- [x] Set E2's budget from the pilot curves: 200k if they've plateaued by then, up to 400k if still rising. Rescale `replay_capacity` and `eval_every` with it (§4.5 budget rule). *(Nov 25: **400k**, so nothing to rescale. The pilots plateaued by ~100k, so the rule says 200k. But it was written to save compute, and the GPU would otherwise sit idle until Dec 1. 400k is the exact config the pilots validated, with no decline out to 400k. A 200k run would compress the ε schedule and the buffer, so the pilots would only approximate it.)*
+- [x] ~~*(Before the Dec 1 code freeze, optional)* Smooth progress bars: have `train.py` overwrite a one-line `progress.json` in the run directory every round (games, wall time). `scripts/watch.py` then reads it when present, so bars move every round instead of only at eval points. The run's results don't change.~~ *(Noted Nov 25, when the watcher was built. Dropped the same night: training code is frozen from E2's launch, because the sweep starts later batches as new processes that load whatever code is on disk. The bars move at eval points: every ~10 min per 6×6 run, less often for 8×8.)*
+- [x] **8×8 gate 2** (§4.8): go/no-go on E6. If go, set E6's budget (≤ 1M) from P8's curve and rescale likewise. *(Passed Nov 25. E6 runs **1M games**, P8's config unchanged, because P8's score vs greedy was still falling at 1M, the dynamic the pool run should be compared on. **2 seeds per condition.** A-naive seed 0 is P8 itself: same config, seed and training code (the training modules are unchanged since P8's commit 4d458d1). Since runs are deterministic per seed, rerunning it would reproduce P8. `make sweep-8x8` copies P8 into `runs/e6-8x8/env-naive/seed0` and trains the other three.)*
 - [x] 6×6 endgame solver + 500-position test set, cached. Then set `endgame_set: data/endgame6.jsonl` in `configs/6x6.yaml` again (before E2), and backfill the pilots' endgame accuracy from their checkpoints. *(Done Nov 24, §4.4, and `endgame_set` restored. Pilots backfilled Nov 25 with `scripts/backfill.py` into each run's `backfill.jsonl`, §4.1. A test shows the backfill reproduces training's logged values exactly. On the pilots' real checkpoints, CPU and GPU agree on 163 of 164, and the other differs by one position.)*
 
 **Tue Dec 1** (~4 h) — **M2: experiment code freeze**
-- [ ] Launch **E2** (6×6 2×2, 12 runs, endgame accuracy in eval): `caffeinate -i make sweep-6x6` on the laptop GPU, four at a time in three batches, ~8½ h at 200k or ~16½ h at 400k.
-- [ ] If gate 2 passed: launch **E6** (8×8 A pair) ~~on hardware E2 doesn't use~~ on the laptop GPU once E2 has finished (`make sweep-8x8`), on Dec 2 at the latest.
+- [ ] Launch **E2** (6×6 2×2, 12 runs, endgame accuracy in eval): `caffeinate -i make sweep-6x6` on the laptop GPU, four at a time in three batches, ~8½ h at 200k or ~16½ h at 400k. *(Pulled forward to Nov 25, 400k, chained with E6: `caffeinate -i sh -c 'make sweep-6x6 && make sweep-8x8'`. Commit first, so every `meta.json` records a clean commit. A CPU smoke run of E2's config, negamax-pool with the live endgame eval, passed that night.)*
+- [ ] If gate 2 passed: launch **E6** (8×8 A pair) ~~on hardware E2 doesn't use~~ on the laptop GPU once E2 has finished (`make sweep-8x8`), on Dec 2 at the latest. *(Nov 25: runs straight after E2 in the same chain. Three new runs: A-naive seed 1, A-pool seeds 0 and 1. A CPU smoke run of 8×8 A-pool, the one 8×8 path P8 didn't exercise, passed.)*
 - [x] Analysis scripts: seed-band curves, §4.7 summary numbers, Spearman ρ, H4 gap. *(Done Nov 24, §4.9: F1, F2, F3, F5, T1. E1's F1, F3 and T1 are in `figures/e1-4x4/` and `tables/e1-4x4/`.)*
 - [ ] Cross-play script; run E3 on 4×4.
 
