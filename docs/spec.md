@@ -416,7 +416,7 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 | E3 | Cross-play matrices | — | Dec 1 (4×4) / Dec 4 (6×6) |
 | E5 | Checkpoint regret (self-history + held-out; + true regret on 4×4) | — | Dec 2 (4×4) / Dec 4 (6×6) |
 | E4 | *(Could)* ~~A-naive replay-buffer ablation (¼ size)~~ Replay-buffer size, or pool mix 80/20. *4×4 part done Nov 24 (`make replay-4x4`): a buffer that keeps every transition removes E1's post-peak decline (results below). A 6×6 version, if any, waits for the pilots* | 3 seeds | Only with spare compute |
-| P8 | *(Could)* 8×8 pilot: A-naive, 1M games (`make pilot-8x8`) | 1 | Launch Nov 25 alongside P (gate 1 passed Nov 24); ~1 day |
+| P8 | *(Could)* 8×8 pilot: A-naive, 1M games (`make pilot-8x8`) | 1 | Launched Nov 24 alongside P (gate 1 passed Nov 24). **Done Nov 25 in 22h09m:** ~0.90 vs positional from 200k games on (final 0.88), while the score vs greedy fell from 0.92 to ~0.68 |
 | E6 | *(Could)* 8×8 A pair: A-naive vs A-pool on the frozen code (`make sweep-8x8`) | 2 × 1 seed | Launch Dec 1 (Dec 2 at the latest), only if gate 2 passed |
 | E7 | *(Could)* Settings comparison: rerun with the pre-Nov-24 settings (`eps_end` 0.05, `target_update_every` 1,000) on the same code, compared with E1 / P. 4×4: `make sweep-4x4-old` (all 4 conditions × 5 seeds, ~5 min per run on `mps`). 6×6: `make pilot-6x6-old` (1 seed per condition, GPU hours) | 20 (4×4) + 4 (6×6) | 4×4 any time after E1 launches; 6×6 only with spare compute, never ahead of E2 |
 

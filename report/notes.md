@@ -72,7 +72,15 @@ The full details and numbers live in `docs/spec.md` (section refs in brackets).
 - **The self-play score vs endgame accuracy:** Spearman ρ −0.18 to −0.44 per run (first point dropped, as in T1). The H3 pattern holds on 6×6 as well.
 - Backfill checks: a test shows it reproduces training's logged values exactly, and CPU vs GPU evaluation agree on 163 of 164 pilot checkpoints (the other differs by one position of 500).
 
-### 8×8 pilot P8 (midpoint, 500k of 1M games, Nov 25)
+### 8×8 pilot P8 (finished Nov 25, 1M games in 22h09m)
+- **Final numbers:**
+  - Score vs positional averages 0.908 over 200k–500k, 0.892 over 500k–800k and 0.884 over 800k–1M. Final (last 3 points) 0.879, peak 0.938 at 840k, max drawdown 0.098. That's just under the 10-point threshold, so 0 forgetting events. The ~2-point drift down is suggestive at most with one seed.
+  - Score vs greedy **kept falling**: 0.776 → 0.704 → 0.678 over the same segments, with lows of 0.61 at 920k and 980k (CI 0.54–0.67).
+  - Score vs the previous checkpoint ≈ 0.51 throughout. Its Spearman ρ with score vs positional is −0.10 (first point dropped).
+  - `mean_q` flat at ~0.42–0.44 from 400k on.
+- The midpoint notes below still hold. The fall vs greedy is the main 8×8 story, and it's the dynamic E6's pool run should be compared on.
+
+#### Midpoint notes (500k of 1M games, Nov 25)
 - **Gate 2's 8×8 bar is already cleared:** ~0.90 vs positional since 200k games (95% CI at 500k: 0.81–0.91), far above the 50% bar.
 - **Plateau vs positional since ~200k**, which is exactly where ε reaches its floor (0.2 × 1M). Since then it has stayed between 0.87 and 0.93, all within eval noise. No decline yet, though the last two points (0.89, 0.87) are the lowest since 180k. The budget caveat below applies: a shorter E6 would hit the ε floor sooner.
 - **Score vs greedy fell while score vs positional rose:** 0.92 at 20k–60k (CI 0.87–0.95 at 40k), down to 0.70–0.83 from 280k on (CI 0.64–0.77 at 320k). The CIs don't overlap, so it's real. 6×6 shows nothing like it: all four pilots stay at ~0.97 vs greedy throughout. So on 8×8 the agent got stronger against one fixed opponent and weaker against another. That's non-transitivity, and a good argument for using several external references rather than one (H3-adjacent). A guess, untested: once ε is low, self-play lines stop covering the greedy player's flip-maximising openings.
