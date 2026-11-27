@@ -10,7 +10,7 @@ SERVER ?=
 SERVER_DIR ?= othello-rl
 RUN ?=
 
-.PHONY: help setup test test-py test-web data ladder sweep-4x4 sweep-4x4-old replay-4x4 pilot-6x6 pilot-6x6-old sweep-6x6 sweep-6x6-extra pilot-8x8 sweep-8x8 sync watch backfill figures report demo web-dev
+.PHONY: help setup test test-py test-web data ladder sweep-4x4 sweep-4x4-old replay-4x4 pilot-6x6 pilot-6x6-old sweep-6x6 sweep-6x6-extra pilot-8x8 sweep-8x8 sync watch backfill crossplay figures report demo web-dev
 
 help:  ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -105,6 +105,9 @@ EXPS ?= e1-4x4 e2-6x6
 
 backfill:  ## 6x6 endgame accuracy from checkpoints, for runs that trained without it: make backfill EXPS=pilot-6x6
 	$(PY) scripts/backfill.py --exp $(EXPS)
+
+crossplay:  ## E3: cross-play round robins (CPU), within and across runs: make crossplay EXPS="e1-4x4 e2-6x6"
+	$(PY) scripts/crossplay.py --exp $(EXPS) --jobs $(JOBS)
 
 figures:  ## runs/ -> figures/ and tables/ (EXPS=... to choose experiments)
 	$(PY) scripts/analyze.py --exp $(EXPS)

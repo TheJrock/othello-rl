@@ -270,8 +270,25 @@ def evaluate_checkpoint(
 def crossplay_matrix(
     players: Sequence[Player], openings: Sequence[State], rng: np.random.Generator
 ) -> np.ndarray:
-    """M[i, j] = score of players[i] against players[j] over the opening bank (spec §4.7, F4)."""
-    raise NotImplementedError("evaluate.crossplay_matrix")
+    """M[i, j] = score of players[i] against players[j] over the opening bank (spec §4.7, F4): the
+    play_match score, so each opening is played once with each player moving first.
+
+    Each pair plays one match, and M[j, i] is that match scored for the other side, so
+    M[i, j] + M[j, i] = 1 exactly. The diagonal is NaN: a deterministic player against itself
+    scores exactly 0.5 by construction, which says nothing.
+
+    Pairs play one at a time. Sending every pair through a single play_games call wouldn't be
+    faster: on the CPU a forward pass costs the same per position at batch 100 as at 4,000
+    (measured Nov 27), so the cost is the number of positions evaluated (~0.5 s per 200-game
+    6×6 match)."""
+    k = len(players)
+    m = np.full((k, k), np.nan)
+    for i in range(k):
+        for j in range(i + 1, k):
+            s = play_match(players[i], players[j], openings, rng)
+            m[i, j] = s.score
+            m[j, i] = MatchStats(wins=s.losses, draws=s.draws, losses=s.wins).score
+    return m
 
 
 FINAL_POINTS = 10  # summarize_run's "final" window, in eval points (spec §4.7; 3 until Nov 27)

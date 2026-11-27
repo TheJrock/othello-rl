@@ -7,10 +7,11 @@ import pytest
 import torch
 
 from othello_rl import engine as E
-from othello_rl import solver
+from othello_rl import evaluate, solver
 from othello_rl.evaluate import (
     EvalContext,
     MatchStats,
+    crossplay_matrix,
     endgame_accuracy,
     endgame_values,
     evaluate_checkpoint,
@@ -297,6 +298,52 @@ def test_evaluate_checkpoint_logs_endgame_accuracy(endgame_records, rng):
     row = evaluate_checkpoint(build_net(cfg), None, cfg, ctx, rng)
     assert 0.0 <= row["endgame_accuracy"] <= 1.0
     assert "accuracy_4x4" not in row
+
+
+# --- cross-play (spec §4.7, E3) ----------------------------------------------------------------
+
+
+class Middle(Lowest):
+    def act(self, states, rng):
+        return [int((legal := np.flatnonzero(E.legal_mask(s)))[len(legal) // 2]) for s in states]
+
+
+def test_crossplay_matrix_is_play_match_for_every_pair(rng):
+    openings = opening_bank(6, plies=4, count=30, seed=0)
+    players = [Lowest("a"), Highest("b"), Middle("c")]  # deterministic, so every match is reproducible
+    m = crossplay_matrix(players, openings, rng)
+    assert m.shape == (3, 3) and np.isnan(np.diag(m)).all()
+    for i in range(3):
+        for j in range(3):
+            if i != j:
+                assert m[i, j] == play_match(players[i], players[j], openings, rng).score
+    assert len({m[0, 1], m[0, 2], m[1, 2]}) > 1  # the three players really differ
+
+
+def test_crossplay_matrix_plays_each_pair_once_and_mirrors_it(monkeypatch, rng):
+    """One match per unordered pair; the other cell is the same games from the other side, so the
+    two add to 1 even with a random player (whose rematch would differ)."""
+    openings = opening_bank(6, plies=4, count=30, seed=0)
+    calls = []
+    real = evaluate.play_match
+
+    def spy(p1, p2, ops, r):
+        calls.append((p1.name, p2.name))
+        return real(p1, p2, ops, r)
+
+    monkeypatch.setattr(evaluate, "play_match", spy)
+    players = [Lowest("a"), Highest("b"), RandomPlayer(), Middle("c")]
+    m = crossplay_matrix(players, openings, rng)
+    assert calls == [("a", "b"), ("a", "random"), ("a", "c"), ("b", "random"), ("b", "c"), ("random", "c")]
+    off = ~np.eye(4, dtype=bool)
+    assert (m + m.T)[off] == pytest.approx(1.0, abs=1e-12)
+    assert m[2, 0] == pytest.approx(1 - m[0, 2]) and 0 < m[0, 2] < 1
+
+
+def test_crossplay_matrix_with_fewer_than_two_players(rng):
+    openings = opening_bank(4, plies=2, count=None, seed=0)
+    assert crossplay_matrix([], openings, rng).shape == (0, 0)
+    assert np.isnan(crossplay_matrix([Lowest()], openings, rng)).all()
 
 
 # --- per-run summary (spec §4.7, T1) --------------------------------------------------------------

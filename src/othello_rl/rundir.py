@@ -6,9 +6,11 @@
         log.jsonl            one row per eval point (spec §4.6), append-only, written by training
         backfill.jsonl       optional: metrics computed later from the checkpoints (scripts/backfill.py),
                              one row per eval point keyed by `games`; read_log merges it in
+        crossplay.json       optional: round robin of the run's checkpoints (scripts/crossplay.py)
         stdout.log           written by scripts/sweep.py
         ckpt/g0005000.pt     one checkpoint per eval point; these are also the opponent pool
                              and the regret references (spec D8)
+    runs/<exp>/crossplay_finals.json   optional: round robin of every run's final checkpoint
 
 Torch-free on purpose, so analysis scripts can import it cheaply.
 """
@@ -29,6 +31,8 @@ from .config import Config, load_config
 CKPT_DIR = "ckpt"
 LOG_FILE = "log.jsonl"
 BACKFILL_FILE = "backfill.jsonl"
+CROSSPLAY_FILE = "crossplay.json"  # in a run directory
+CROSSPLAY_FINALS_FILE = "crossplay_finals.json"  # in an experiment directory
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -59,7 +63,8 @@ def prepare_run_dir(cfg: Config, overwrite: bool = False) -> Path:
     """Create the run directory and write config.yaml + meta.json.
 
     Refuses to touch a run that already has a log unless `overwrite`, in which case the old log,
-    backfill and checkpoints are deleted so results from two different runs can never mix.
+    backfill, cross-play results and checkpoints are deleted so results from two different runs
+    can never mix.
     """
     run_dir = cfg.run_dir
     log = run_dir / LOG_FILE
@@ -68,6 +73,7 @@ def prepare_run_dir(cfg: Config, overwrite: bool = False) -> Path:
             raise FileExistsError(f"{run_dir} already has a {LOG_FILE}; pass --overwrite to replace that run")
         log.unlink()
         (run_dir / BACKFILL_FILE).unlink(missing_ok=True)
+        (run_dir / CROSSPLAY_FILE).unlink(missing_ok=True)
         shutil.rmtree(run_dir / CKPT_DIR, ignore_errors=True)
     (run_dir / CKPT_DIR).mkdir(parents=True, exist_ok=True)
     cfg.save(run_dir / "config.yaml")
