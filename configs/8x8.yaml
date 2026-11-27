@@ -1,5 +1,5 @@
 # 8×8 defaults (spec §4.5). A gated add-on, not part of the 2×2 (spec D9, §4.8): the env pair only,
-# one seed each. Run it on a GPU, e.g.
+# two seeds each (A-naive seed 0 is the P8 pilot). Run it on a GPU, e.g.
 #   python -m othello_rl.train --config configs/8x8.yaml --exp e6-8x8 --target env --sampling pool --seed 0 --device mps
 board: 8
 

@@ -72,6 +72,13 @@ The full details and numbers live in `docs/spec.md` (section refs in brackets).
 - **The self-play score vs endgame accuracy:** Spearman ρ −0.18 to −0.44 per run (first point dropped, as in T1). The H3 pattern holds on 6×6 as well.
 - Backfill checks: a test shows it reproduces training's logged values exactly, and CPU vs GPU evaluation agree on 163 of 164 pilot checkpoints (the other differs by one position of 500).
 
+### E2: 6×6 2×2, 3 seeds (finished Nov 26; numbers in spec §4.8)
+- **Headline: the target matters, the sampler doesn't.** N beats A on endgame accuracy by 1.4 points, with every N run above every A run, which replicates E1 on a bigger board. Pool vs naive is +0.8 points of endgame accuracy under both targets, not significant (p = 0.14), and there's no H4 interaction (bounded to about ±2 points).
+- **H2 framing:** the curves are flat after ~100k games, and the drawdowns are what eval noise alone produces (plateau SD 0.020, the same as a 200-game match's binomial SD). Say so explicitly, and don't read T1's drawdown column as forgetting. On 6×6, any forgetting evidence has to come from cross-play and regret.
+- **H3 nuance, worth a sentence:** ρ ≈ 0 on the plateau. The overall negative ρ comes from the learning phase, where the self-play score is high *because* the net is improving fast. It's a rate-of-improvement signal, not a strength signal.
+- Scores vs greedy (0.97) and random (0.99) are at the ceiling on 6×6. On 8×8 the score vs greedy fell to ~0.68 (P8).
+- T1's "final" (last 3 points) is noise-dominated on 6×6: SE ≈ 0.012, against effects of ≤ 0.007. It flips the sign of pool − naive compared with the 200k–400k mean. See the open decision below.
+
 ### 8×8 pilot P8 (finished Nov 25, 1M games in 22h09m)
 - **Final numbers:**
   - Score vs positional averages 0.908 over 200k–500k, 0.892 over 500k–800k and 0.884 over 800k–1M. Final (last 3 points) 0.879, peak 0.938 at 840k, max drawdown 0.098. That's just under the 10-point threshold, so 0 forgetting events. The ~2-point drift down is suggestive at most with one seed.
@@ -106,6 +113,7 @@ The full details and numbers live in `docs/spec.md` (section refs in brackets).
 ### Compute (appendix / reproducibility)
 - **E6's A-naive seed 0 is the P8 pilot**, copied in rather than rerun: same config, seed and training code, and runs are deterministic per seed. Its `meta.json` shows P8's commit (4d458d1) and its config says `exp: pilot-8x8`. Say so in the appendix.
 - **E2 and E6 launched early (Nov 25)**, as one chain over Thanksgiving, once the pilots had answered the Nov 30 questions. Training code is frozen from that launch.
+- E2 took 18 h 55 min for 12 runs (6.0–6.4 h each, 4 at a time), against the ~16½ h estimate.
 - Everything trains on the laptop's Apple GPU (M1 Pro, `mps`). Even 4×4 was too slow on CPU: 50 ms per backward pass vs 3.8 ms on the GPU, and more CPU threads made it slower for this small net.
 - Four runs sharing the GPU get ~2× the total throughput of one run alone.
 - The server (2 ARM cores, no GPU) is ~39× slower than the laptop GPU, so it isn't used for the main runs.
@@ -121,7 +129,10 @@ The full details and numbers live in `docs/spec.md` (section refs in brackets).
 - [ ] **E3 on 4×4:** does an E1 run's ~10k-game checkpoint beat its final checkpoint in real games? If so, that's a concrete H2/H3 example: a decline the self-play score never flagged. Cheap once `crossplay_matrix` exists.
 - [ ] Caveat when picking E2's budget from the pilots: the ε schedule and the buffer scale with `games`. A 200k run reaches ε's floor at 40k (the pilot at 80k), so the pilot's curve at 200k only approximates a 200k run.
 - [ ] P8's fall vs greedy: when P8 finishes, play its 60k checkpoint against its final one (crossplay). If the early checkpoint wins, the self-play score missed a regression. Also check whether the fall vs greedy continues past 500k.
-- [ ] Does pool's extra coverage matter on 6×6, where the state space is far larger than 4×4's? That's the real test of H1.
+- [ ] Does pool's extra coverage matter on 6×6, where the state space is far larger than 4×4's? That's the real test of H1. *E2 (Nov 27): not on endgame accuracy or score vs positional (+0.8 and +0.4 points, not significant). Head-to-head cross-play between pool and naive agents is the last direct test.*
+- [ ] **T1's "final" window (decide before E6's T1):** last 3 eval points (spec §4.7) or the last 10 (what E1's §4.8 table already uses)? On 6×6 the last 3 have SE ≈ 0.012 from match noise alone, and the last 10 ≈ 0.006. If changed, change it on every board and say it was changed after E2 for noise reasons. The conclusions don't depend on it.
+- [ ] Optional: E2 seeds 3–4 (8 runs, ~13 h of GPU time that would otherwise sit idle after E6) to firm up pool's +0.8 endgame points and the H4 bound. Only if decided before looking further, and reported as an extension decided after seeing 3 seeds (optional stopping).
+- [ ] E3 addition: one round robin of all 12 E2 final checkpoints, a direct pool vs naive comparison, alongside the per-run checkpoint matrices.
 - [ ] A-pool's flat curve: is pool slowing A's early learning slightly (lower peak), or protecting it from the decline?
 - [ ] If citing a training-time pool sampling rule, check how TiZero (MADRID's ref. [29]) samples opponents. [§4.6]
 - [ ] E7 (old settings) if there's spare compute: is the settings change itself a finding?
