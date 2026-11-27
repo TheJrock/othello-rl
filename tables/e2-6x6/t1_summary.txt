@@ -1,9 +1,9 @@
-T1 (score_positional; condition rows mean ± sd over seeds, gap rows difference ± SE). 
+T1 (score_positional; final = mean of the last 10 eval points; condition rows mean ± sd over seeds, gap rows difference ± SE).
                                           Final                Peak        Max drawdown   Forgetting events        Spearman rho
-env-naive                         0.905 ± 0.006       0.934 ± 0.006       0.053 ± 0.012           0.0 ± 0.0        -0.24 ± 0.25
-env-pool                          0.898 ± 0.007       0.943 ± 0.009       0.064 ± 0.016           0.0 ± 0.0        -0.25 ± 0.15
-negamax-naive                     0.896 ± 0.015       0.926 ± 0.011       0.052 ± 0.022           0.0 ± 0.0        -0.29 ± 0.03
-negamax-pool                      0.892 ± 0.008       0.932 ± 0.008       0.084 ± 0.016           0.3 ± 0.6        -0.17 ± 0.09
-pool - naive (env)               -0.007 ± 0.005      +0.009 ± 0.006      +0.011 ± 0.011          +0.0 ± 0.0        -0.01 ± 0.17
-pool - naive (negamax)           -0.004 ± 0.010      +0.006 ± 0.008      +0.032 ± 0.016          +0.3 ± 0.3        +0.12 ± 0.06
-H4: env gap - negamax gap        -0.004 ± 0.012      +0.003 ± 0.010      -0.021 ± 0.019          -0.3 ± 0.3        -0.13 ± 0.18
+env-naive                         0.904 ± 0.003       0.934 ± 0.006       0.053 ± 0.012           0.0 ± 0.0        -0.24 ± 0.25
+env-pool                          0.907 ± 0.003       0.943 ± 0.009       0.064 ± 0.016           0.0 ± 0.0        -0.25 ± 0.15
+negamax-naive                     0.896 ± 0.019       0.926 ± 0.011       0.052 ± 0.022           0.0 ± 0.0        -0.29 ± 0.03
+negamax-pool                      0.895 ± 0.004       0.932 ± 0.008       0.084 ± 0.016           0.3 ± 0.6        -0.17 ± 0.09
+pool - naive (env)               +0.004 ± 0.003      +0.009 ± 0.006      +0.011 ± 0.011          +0.0 ± 0.0        -0.01 ± 0.17
+pool - naive (negamax)           -0.000 ± 0.011      +0.006 ± 0.008      +0.032 ± 0.016          +0.3 ± 0.3        +0.12 ± 0.06
+H4: env gap - negamax gap        +0.004 ± 0.012      +0.003 ± 0.010      -0.021 ± 0.019          -0.3 ± 0.3        -0.13 ± 0.18

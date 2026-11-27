@@ -10,10 +10,10 @@ SERVER ?=
 SERVER_DIR ?= othello-rl
 RUN ?=
 
-.PHONY: help setup test test-py test-web data ladder sweep-4x4 sweep-4x4-old replay-4x4 pilot-6x6 pilot-6x6-old sweep-6x6 pilot-8x8 sweep-8x8 sync watch backfill figures report demo web-dev
+.PHONY: help setup test test-py test-web data ladder sweep-4x4 sweep-4x4-old replay-4x4 pilot-6x6 pilot-6x6-old sweep-6x6 sweep-6x6-extra pilot-8x8 sweep-8x8 sync watch backfill figures report demo web-dev
 
 help:  ## list targets
-	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
+	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
 
 setup:  ## create .venv (Python 3.12) and install Python + web dependencies
 	uv venv --python 3.12 .venv
@@ -66,8 +66,19 @@ pilot-6x6:  ## P: 6x6, 2x2 conditions x 1 seed, 400k games (sets the E2 budget, 
 pilot-6x6-old:  ## E7: the 6x6 pilots with the pre-Nov-24 settings (only with spare compute)
 	$(PY) scripts/sweep.py --config configs/6x6.yaml --exp e7-6x6-old --seeds 0 --jobs $(JOBS) -- --device $(DEVICE) $(OLD_KNOBS)
 
-sweep-6x6:  ## E2: 6x6, 2x2 conditions x 3 seeds, 400k games (~16.5 h, 4 at a time)
+sweep-6x6:  ## E2: 6x6, 2x2 conditions x 3 seeds, 400k games (~19 h, 4 at a time)
 	$(PY) scripts/sweep.py --config configs/6x6.yaml --exp e2-6x6 --seeds 0 1 2 --jobs $(JOBS) -- --device $(DEVICE)
+
+# E2's extra seeds (decided Nov 27, spec §4.8) run from a checkout of E2's own commit (a git worktree),
+# so their code is E2's by construction and their meta.json records that commit, whatever this tree has
+# gained since (cross-play, regret, analysis). PYTHONPATH makes the checkout's src/ win over the editable
+# install; a symlink sends its runs/ to this tree's runs/. Never run it while another sweep has the GPU.
+E2_COMMIT := 6b040df
+E2_TREE := $(CURDIR)/.worktrees/e2-$(E2_COMMIT)
+sweep-6x6-extra:  ## E2 extension: seeds 3-4 on E2's exact code (commit 6b040df), 8 runs (~13 h, 4 at a time)
+	@test -d $(E2_TREE) || git worktree add --detach $(E2_TREE) $(E2_COMMIT)
+	@test -e $(E2_TREE)/runs || ln -s $(CURDIR)/runs $(E2_TREE)/runs
+	cd $(E2_TREE) && PYTHONPATH=$(E2_TREE)/src $(abspath $(PY)) scripts/sweep.py --config configs/6x6.yaml --exp e2-6x6 --seeds 3 4 --jobs $(JOBS) -- --device $(DEVICE)
 
 pilot-8x8:  ## P8: 8x8 env-naive, 1 seed, 1M games (gate 1 passed Nov 24, spec §4.8). Needs a GPU
 	$(PY) scripts/sweep.py --config configs/8x8.yaml --exp pilot-8x8 --targets env --samplings naive --seeds 0 --jobs 1 -- --device $(DEVICE)

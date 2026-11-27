@@ -316,11 +316,19 @@ def test_summarize_run_numbers():
     #        running max: 0.2  0.5  0.8  0.8  0.85 0.85 0.85
     values = [0.2, 0.5, 0.8, 0.6, 0.85, 0.7, 0.72]
     s = summarize_run(_rows(values))
-    assert s["final"] == pytest.approx((0.85 + 0.7 + 0.72) / 3)
+    assert s["final"] == pytest.approx(np.mean(values))  # fewer than 10 points: all of them
     assert (s["peak"], s["peak_games"]) == (0.85, 4000)
     assert s["max_drawdown"] == pytest.approx(0.15)  # 0.85 → 0.7, after the peak only
     assert s["forgetting_events"] == 2  # 0.6 (< 0.8 − 0.1), then 0.7 and 0.72 (< 0.85 − 0.1) as one event
     assert np.isnan(s["spearman"])  # no self-play scores in these rows
+
+
+def test_summarize_run_final_is_the_mean_of_the_last_ten_points():
+    # Spec §4.7 (decided Nov 27): 10, pinned here rather than read from FINAL_POINTS, so changing
+    # the window takes a deliberate edit to this test too. The two zeros catch a window of 11 or 12,
+    # and the 0.9 and 0.7 at the end catch a window of 9.
+    values = [0.0, 0.0] + [0.5] * 8 + [0.9, 0.7]
+    assert summarize_run(_rows(values))["final"] == pytest.approx((0.5 * 8 + 0.9 + 0.7) / 10)
 
 
 def test_summarize_run_forgetting_threshold_is_strict():

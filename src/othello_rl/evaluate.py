@@ -274,12 +274,18 @@ def crossplay_matrix(
     raise NotImplementedError("evaluate.crossplay_matrix")
 
 
+FINAL_POINTS = 10  # summarize_run's "final" window, in eval points (spec §4.7; 3 until Nov 27)
+
+
 def summarize_run(
     rows: Sequence[dict[str, Any]], key: str = "score_positional", threshold: float = 0.10
 ) -> dict[str, float]:
     """Per-run summary numbers (spec §4.7) for the metric `key` over a run's log rows:
 
-    final              mean of the last 3 eval points
+    final              mean of the last FINAL_POINTS (10) eval points, or of all of them if
+                       there are fewer. 10 rather than 3 (decided Nov 27, after E2): on a 6×6
+                       plateau one eval point carries ±0.02 of match noise, so the last 3 have
+                       SE ≈ 0.012, more than the differences T1 compares; 10 halve that
     peak, peak_games   the best value and where it came (the first time, if tied)
     max_drawdown       peak minus the lowest value at or after the peak (≥ 0)
     forgetting_events  times the value falls more than `threshold` below its running max (each
@@ -310,7 +316,7 @@ def summarize_run(
     if len(pairs) >= 3 and pairs[:, 0].std() > 0 and pairs[:, 1].std() > 0:
         rho = float(spearmanr(pairs[:, 0], pairs[:, 1]).statistic)
     return {
-        "final": float(v[-3:].mean()),
+        "final": float(v[-FINAL_POINTS:].mean()),
         "peak": float(v[i_peak]),
         "peak_games": int(games[i_peak]),
         "max_drawdown": float(v[i_peak] - v[i_peak:].min()),

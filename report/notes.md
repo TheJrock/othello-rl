@@ -77,7 +77,7 @@ The full details and numbers live in `docs/spec.md` (section refs in brackets).
 - **H2 framing:** the curves are flat after ~100k games, and the drawdowns are what eval noise alone produces (plateau SD 0.020, the same as a 200-game match's binomial SD). Say so explicitly, and don't read T1's drawdown column as forgetting. On 6×6, any forgetting evidence has to come from cross-play and regret.
 - **H3 nuance, worth a sentence:** ρ ≈ 0 on the plateau. The overall negative ρ comes from the learning phase, where the self-play score is high *because* the net is improving fast. It's a rate-of-improvement signal, not a strength signal.
 - Scores vs greedy (0.97) and random (0.99) are at the ceiling on 6×6. On 8×8 the score vs greedy fell to ~0.68 (P8).
-- T1's "final" (last 3 points) is noise-dominated on 6×6: SE ≈ 0.012, against effects of ≤ 0.007. It flips the sign of pool − naive compared with the 200k–400k mean. See the open decision below.
+- T1's "final" is now the **last 10 eval points** (decided Nov 27, spec §4.7). The old last-3 version was noise-dominated on 6×6 (SE ≈ 0.012, against effects of ≤ 0.007) and gave pool − naive the opposite sign from the 200k–400k means. With 10 points: pool − naive is +0.4 (A) and 0.0 (N) points vs positional. In the report, define final as the last 10 points and say it was changed after E2 for noise reasons.
 
 ### 8×8 pilot P8 (finished Nov 25, 1M games in 22h09m)
 - **Final numbers:**
@@ -95,7 +95,7 @@ The full details and numbers live in `docs/spec.md` (section refs in brackets).
 - Pace: 6.4 games/s while sharing the GPU with the four 6×6 pilots, 15.9 alone. The checkpoint-vs-previous score averages ~0.5 after 240k; the 480k checkpoint lost to the 460k one (0.38, CI 0.31–0.45).
 
 ### E1's summary table (T1, `tables/e1-4x4/`)
-- **H4 on 4×4 is exactly null:** env gap − negamax gap is +0.000 ± 0.005 in final accuracy. Pool − naive is +0.004 under both targets.
+- **H4 on 4×4 is null:** env gap − negamax gap is +0.001 ± 0.004 in final accuracy. Pool − naive is +0.002 (A) and +0.001 (N). *(Nov 27: with final now the last 10 points. With the last 3 it was +0.000 ± 0.005 and +0.004 under both targets.)* The final column now equals E1's §4.8 results table exactly.
 - **No forgetting events at the 10-point threshold in any of the 20 runs.** The post-peak decline is real but only ~3 points (max drawdown 0.026–0.038). If forgetting matters on 4×4, a smaller threshold would be needed, but don't change the definition after seeing the data. Just report that the threshold doesn't fire on 4×4.
 - **Spearman ρ between the self-play score and accuracy is negative in every condition** (−0.16 to −0.31). Clear H3 support: the self-play score doesn't track strength.
   - *Updated Nov 25:* the first point is always the 1k net vs the untrained net (self ≈ 0.98, accuracy at its lowest), and it dragged ρ down. **T1 now drops it** (spec §4.7). New range: −0.07 to −0.25 per condition, and a few single seeds are slightly positive (up to +0.12). Still nowhere near H3's ρ > 0.7, so the conclusion stands, but say "≈ 0 to weakly negative", not "negative". When defining ρ in the report, say the first point is dropped and why.
@@ -130,9 +130,9 @@ The full details and numbers live in `docs/spec.md` (section refs in brackets).
 - [ ] Caveat when picking E2's budget from the pilots: the ε schedule and the buffer scale with `games`. A 200k run reaches ε's floor at 40k (the pilot at 80k), so the pilot's curve at 200k only approximates a 200k run.
 - [ ] P8's fall vs greedy: when P8 finishes, play its 60k checkpoint against its final one (crossplay). If the early checkpoint wins, the self-play score missed a regression. Also check whether the fall vs greedy continues past 500k.
 - [ ] Does pool's extra coverage matter on 6×6, where the state space is far larger than 4×4's? That's the real test of H1. *E2 (Nov 27): not on endgame accuracy or score vs positional (+0.8 and +0.4 points, not significant). Head-to-head cross-play between pool and naive agents is the last direct test.*
-- [ ] **T1's "final" window (decide before E6's T1):** last 3 eval points (spec §4.7) or the last 10 (what E1's §4.8 table already uses)? On 6×6 the last 3 have SE ≈ 0.012 from match noise alone, and the last 10 ≈ 0.006. If changed, change it on every board and say it was changed after E2 for noise reasons. The conclusions don't depend on it.
-- [ ] Optional: E2 seeds 3–4 (8 runs, ~13 h of GPU time that would otherwise sit idle after E6) to firm up pool's +0.8 endgame points and the H4 bound. Only if decided before looking further, and reported as an extension decided after seeing 3 seeds (optional stopping).
-- [ ] E3 addition: one round robin of all 12 E2 final checkpoints, a direct pool vs naive comparison, alongside the per-run checkpoint matrices.
+- [x] **T1's "final" window:** last 3 eval points or the last 10? **The last 10, on every board** (decided Nov 27; spec §4.7). E1's and E2's T1 regenerated.
+- [ ] **E2+ (in the plan Nov 27, if time):** E2 seeds 3–4 after E6, `make sweep-6x6-extra` (spec §4.8 row E2+). Rules fixed in advance: both seeds, one analysis at 5 seeds, no further extension. In the report, say it was added after 3 seeds (optional stopping) and keep the 3-seed numbers.
+- [x] E3 addition: an across-run round robin of every final checkpoint (pool vs naive, A vs N, head-to-head), alongside the within-run ones. **In the plan for all three boards** (Nov 27, spec §4.7).
 - [ ] A-pool's flat curve: is pool slowing A's early learning slightly (lower peak), or protecting it from the decline?
 - [ ] If citing a training-time pool sampling rule, check how TiZero (MADRID's ref. [29]) samples opponents. [§4.6]
 - [ ] E7 (old settings) if there's spare compute: is the settings change itself a finding?

@@ -33,7 +33,7 @@ from matplotlib.lines import Line2D
 from matplotlib.ticker import FuncFormatter
 
 from othello_rl import rundir
-from othello_rl.evaluate import summarize_run
+from othello_rl.evaluate import FINAL_POINTS, summarize_run
 
 ROOT = Path(__file__).resolve().parents[1]
 Condition = tuple[str, str]  # (target, sampling)
@@ -364,7 +364,7 @@ def common_horizon(logs: Logs) -> int:
 def summaries(logs: Logs, key: str) -> dict[Condition, dict[str, np.ndarray]]:
     """summarize_run per seed, as arrays over seeds: {condition: {column: values}}. Every run is cut
     at common_horizon(logs) first, so runs that are still going are compared with the others at the
-    same point in training ("final" = the last 3 eval points up to there)."""
+    same point in training ("final" = the last FINAL_POINTS eval points up to there)."""
     horizon = common_horizon(logs)
     out = {}
     for cond, runs in logs.items():
@@ -474,7 +474,8 @@ def table_summary(logs: Logs, out: Path, key: str = "score_positional") -> None:
         r"\bottomrule",
         (
             rf"\multicolumn{{{len(T1_COLUMNS) + 1}}}{{l}}{{\footnotesize Metric: \texttt{{{key_tex}}}; "
-            rf"{'/'.join(map(str, seeds))} seed(s) per condition. {cut_note}Condition rows: mean $\pm$ std over seeds. "
+            rf"{'/'.join(map(str, seeds))} seed(s) per condition. {cut_note}Final: mean of the last "
+            rf"{FINAL_POINTS} eval points. Condition rows: mean $\pm$ std over seeds. "
             r"Gap rows: difference of means $\pm$ standard error.}"
         ),
         r"\end{tabular}",
@@ -483,7 +484,8 @@ def table_summary(logs: Logs, out: Path, key: str = "score_positional") -> None:
 
     width = max(len(label) for _, label, _ in rows) + 2
     lines = [
-        f"T1 ({key}; condition rows mean ± sd over seeds, gap rows difference ± SE). {cut_note}",
+        f"T1 ({key}; final = mean of the last {FINAL_POINTS} eval points; condition rows mean ± sd "
+        f"over seeds, gap rows difference ± SE). {cut_note}".rstrip(),
         f"{'':{width}}"
         + "".join(f"{h.replace('$', '').replace(chr(92) + 'rho', 'rho'):>20}" for _, h, _ in T1_COLUMNS),
     ]

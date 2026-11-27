@@ -89,7 +89,7 @@ The proposal's MDP row ("opponent's policy is part of the environment") describe
 
 **D8. Checkpoints have two jobs: training opponents (pool) and evaluation references (MADRID).** Keep every checkpoint from every run; they're ~0.5 MB each. Caveat: a pool agent was *trained against* its own checkpoints, so regret measured against its own history is biased in its favor. Always also report regret against a **common held-out reference set** (§4.7).
 
-**D9. 8×8 is an add-on, not a third board in the design.** It asks one question: does the 6×6 A-row result (pool vs naive) still hold on the full board? It runs only the A pair, because A is where the pool's mechanism operates (D1). With one seed per arm it is illustrative and never evidence for H1–H4 on its own. It runs only if it costs nothing on the critical path:
+**D9. 8×8 is an add-on, not a third board in the design.** It asks one question: does the 6×6 A-row result (pool vs naive) still hold on the full board? It runs only the A pair, because A is where the pool's mechanism operates (D1). With two seeds per arm (one, until gate 2 on Nov 25) it is illustrative and never evidence for H1–H4 on its own. It runs only if it costs nothing on the critical path:
 - It runs on hardware E2 doesn't use, such as the laptop GPU (`--device mps`).
 - It needs no new code after M2, only `configs/8x8.yaml`.
 - It never takes time from Dec 7–9.
@@ -382,14 +382,19 @@ So "≥ 95% vs random" can only apply from the start position. On the 4×4 bank 
   - *Revised Nov 23 (was 2 plies on 4×4, 4 plies on 6×6/8×8).* Shallower banks have too few genuinely different openings. Mirror images and rotations of an opening are the same opening to a symmetric player, and a net trained with D4 augmentation is close to one. At 2 plies, 4×4 has 12 positions but only 3 up to symmetry, and its 24-game matches gave ±20-point intervals. At 4 plies, 6×6 and 8×8 have 236 positions (60 up to symmetry), and a 100-position sample held only 49 different ones. The revised banks hold 31 (4×4) and 97–99 (6×6/8×8) different openings. The cost is more random moves before the agents take over, which is harmless: every opening is played from both sides, so a lopsided opening favors each player once.
 - **Score** = (wins + 0.5·draws) / games, with a 95% Wilson interval.
 - **Randomness** *(noted Nov 26)*. One generator per run (`np.random.default_rng(seed)` in `train.seed_everything`) drives self-play and every eval point. Eval points continue the stream; nothing is reseeded. Eval uses it only to break ties and for the random player's moves. So net-only metrics (4×4 accuracy, endgame accuracy) are deterministic in practice: the backfill, with its own generator, reproduced them exactly. Scores vs greedy and positional, whose players tie often, moved by up to 4–5 points across five generators on one 6×6 checkpoint (SD ≈ 0.02, the binomial noise of a 200-game match). Eval also consumes draws, so changing evaluation (the endgame set, the opening bank, another reference player) changes the training after it: a run reproduces only from the same seed, config and eval settings. A generator per eval point (`[seed, games]`, as `scripts/backfill.py` uses) would decouple the two, but switching now would break P8's reuse as E6's A-naive seed 0, so it stays.
-- **Per-run summary:** final score (mean of last 3 eval points) · peak · max drawdown after the peak · forgetting events (drops > 10 points below the running max) · Spearman ρ between self-play score and score vs positional.
+- **Per-run summary:** final score (mean of the last 10 eval points; ~~3~~ until Nov 27) · peak · max drawdown after the peak · forgetting events (drops > 10 points below the running max) · Spearman ρ between self-play score and score vs positional.
   - *Implemented Nov 24* (`evaluate.summarize_run`, tested on hand-computed curves).
+    - **Final: last 10 eval points, not 3** *(decided Nov 27, after E2; `evaluate.FINAL_POINTS`)*. The reason is noise, not which condition it favours. On E2's plateau one eval point varies with SD 0.020 (a 200-game match), so a 3-point mean has SE ≈ 0.012, more than the differences T1 compares, and it gave pool − naive the opposite sign from the 200k–400k means. A 10-point mean halves that (≈ 0.006). It applies to every board: 4×4 21k–30k games (the window E1's §4.8 table already used, so T1 and that table now agree exactly), 6×6 310k–400k, 8×8 820k–1M. The conclusions are the same either way. In the report, define final as the last 10 points and say it was changed after E2 for this reason.
     - **Max drawdown:** the peak minus the lowest value at or after it.
     - **Forgetting event:** each time the value falls strictly more than 10 points below its running max. A stretch spent below counts once; recovering and falling again counts again.
     - **Spearman ρ:** over the eval points that have a self-play score (so not game 0), minus the first of them. *(Decided Nov 25.)* That first point is always the first checkpoint (1k games on 4×4, 10k on 6×6) vs the untrained net. It scores ~0.97–0.99 while the external metric is at its lowest, so it says nothing about tracking strength, yet on its own it made ρ 0.05–0.09 more negative. Dropping it is the conservative choice for H3, and doesn't change H3's verdict (ρ is far below 0.7 either way).
     - **On 4×4 the metric is `accuracy_4x4`, not score vs positional.**
     - **Caveats for the report:** with noisy evals, "peak" is biased upward (it's the max of noisy points), so "max drawdown" is too. And a 10-point threshold never fires on 4×4 accuracy, which moves by ~3 points after the peak (E1: 0 events in all 20 runs).
 - **Cross-play matrix:** 15 evenly spaced checkpoints per run, round robin over the opening bank.
+  - *Two kinds of round robin (Nov 27), on every board (4×4 E1, 6×6 E2, 8×8 E6):*
+    - **Within a run:** that run's 15 checkpoints. Does an earlier checkpoint beat the final one (H2), and did the self-play score miss it (H3)? On 4×4 this is where E1's post-peak accuracy decline would show up in play, if it does. 6×6 shows no decline, so there it tests for hidden non-transitivity. 8×8 also includes P8's question: does the 60k checkpoint beat the final one, given the fall vs greedy?
+    - **Across runs:** every run's final checkpoint in one round robin (E1: 20, E2: 12 or 20, E6: 4). This is a direct head-to-head between pool and naive agents (H1) and between A and N agents (the target effect). It's more sensitive than scores vs fixed references, which saturate on 6×6.
+  - Cost (CPU, 1 thread): one 200-game 6×6 match takes ~0.4 s, so E2's across-run round robin takes under a minute, and the within-run ones ~40 s per run. 8×8 is ~2 s per match, so ~4 min per run. 4×4 takes seconds.
 
 **Position-level checkpoint regret (adapted from MADRID, Samvelyan et al. 2024)**
 MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots, as reference policies. It finds starting states ("levels") where swapping a reference policy in for the target does better against the target than the target does against itself. Their regret, `V(π_R, π_T) − V(π_T, π_T)`, is **cross-play minus self-play**, which is the same idea as H3. The Othello adaptation:
@@ -414,7 +419,8 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 | E1 | 4×4 2×2 | 4 × 5 seeds = 20 (minutes each) | ~~Launch Nov 25~~ Done Nov 24: 20/20 runs in 26 min (results below) |
 | P | 6×6 pilots, 400k games (their curves set E2's budget) | 4 × 1 seed | Launch Nov 25 on the laptop GPU (~6–7 h sharing it with P8). No endgame accuracy during training: backfilled from their checkpoints on Nov 25 (`make backfill EXPS=pilot-6x6`, ~2 s per run on the CPU) |
 | E2 | 6×6 2×2 | 4 × 3 seeds = 12 | 400k games (decided Nov 25). Chained with E6: `caffeinate -i sh -c 'make sweep-6x6 && make sweep-8x8'`. **Done Nov 26:** launched 01:42, finished 20:37 (18 h 55 min; 6.0–6.4 h per run, 4 at a time; the estimate was ~16½ h). Every `meta.json`: commit 6b040df, clean. Results below |
-| E3 | Cross-play matrices | — | Dec 1 (4×4) / Dec 4 (6×6) |
+| E2+ | *(Should, if time)* E2 extension: seeds 3–4 of the same 2×2 | 4 × 2 seeds = 8 | Decided Nov 27, after seeing seeds 0–2 (pool's +0.8 endgame points had p = 0.14). On the GPU once E6 has finished: `make sweep-6x6-extra`, ~13 h. It trains from a git worktree of E2's commit 6b040df, so the code is E2's by construction and `meta.json` records that commit (smoke-tested Nov 27). **Rules, fixed now:** run both seeds whatever any interim log shows; analyse once, at 5 seeds; no further extension. The report gives the 5-seed numbers and says the extension came after 3 seeds; the 3-seed results stay in §4.8 |
+| E3 | Cross-play round robins *(revised Nov 27)*: within each run (15 checkpoints) and across runs (every final checkpoint of an experiment), §4.7 | — | CPU only, minutes per experiment. 4×4 and 6×6 as soon as `crossplay_matrix` exists (it's next); 8×8 once E6 finishes |
 | E5 | Checkpoint regret (self-history + held-out; + true regret on 4×4) | — | Dec 2 (4×4) / Dec 4 (6×6) |
 | E4 | *(Could)* ~~A-naive replay-buffer ablation (¼ size)~~ Replay-buffer size, or pool mix 80/20. *4×4 part done Nov 24 (`make replay-4x4`): a buffer that keeps every transition removes E1's post-peak decline (results below). A 6×6 version, if any, waits for the pilots* | 3 seeds | Only with spare compute |
 | P8 | *(Could)* 8×8 pilot: A-naive, 1M games (`make pilot-8x8`) | 1 | Launched Nov 24 alongside P (gate 1 passed Nov 24). **Done Nov 25 in 22h09m:** ~0.90 vs positional from 200k games on (final 0.88), while the score vs greedy fell from 0.92 to ~0.68 |
@@ -464,7 +470,7 @@ MADRID uses 48 checkpoints saved during TiZero's training, plus 3 heuristic bots
 | Learner's score in training games | .499 | .567 | .500 | .563 |
 
 - **Target: N beats A on endgame accuracy, +1.4 points** (Welch p = 0.005), and every N run is above every A run. Same direction as E1 (+2.7 points of 4×4 accuracy) and the pilots. It doesn't show in play: vs positional A is 0.75 points ahead (p = 0.07), and vs greedy and random the rows are identical.
-- **Sampling: no detectable effect on 6×6 (H1 null).** Pool − naive in endgame accuracy is +0.8 points under both targets (p = 0.21 A, 0.08 N; 0.14 pooled), and in score vs positional +0.7 (A, p = 0.13) and +0.1 (N, p = 0.85). The signs favour pool, as in the pilots, but nothing is significant at 3 seeds. T1's "final" (last 3 points) has pool 0.4–0.7 points *behind*: the sign depends on the window, because 3 points carry ±0.012 of eval noise (next bullet but one).
+- **Sampling: no detectable effect on 6×6 (H1 null).** Pool − naive in endgame accuracy is +0.8 points under both targets (p = 0.21 A, 0.08 N; 0.14 pooled), and in score vs positional +0.7 (A, p = 0.13) and +0.1 (N, p = 0.85). The signs favour pool, as in the pilots, but nothing is significant at 3 seeds. T1's final (last 10 points, 310k–400k) agrees: pool − naive +0.4 (A) and 0.0 (N) points vs positional. With the old 3-point final it was −0.7 and −0.4, the opposite sign, because 3 points carry ±0.012 of eval noise (next bullet but one). That's why the window changed (§4.7).
 - **H4: a bounded null.** Interaction (A gap − N gap): +0.5 ± 0.75 points of score vs positional, 0.0 ± 0.6 of endgame accuracy (difference of means ± SE). An interaction bigger than ~2 points on either metric would have shown.
 - **No decline, and the curve metrics sit at the noise floor (H2).** Both metrics are flat from ~100k to 400k (slope over that range −0.5 to +1.5 points per 100k games per run, mostly positive). One forgetting event in 12 runs (an N-pool seed). On the plateau, score vs positional varies with SD 0.020, the binomial SD of a 200-game match at 0.90 (0.021). Independent noise that size over the 31 plateau points gives max drawdowns averaging 0.072 (90% range 0.03–0.10); the runs' are 0.037–0.100. So on 6×6 the drawdown and forgetting columns measure eval noise, and H2 rests on E3 and E5.
 - **H3: as on 4×4.** The self-play score averages 0.55 at 20k–90k games, then 0.50 (range 0.41–0.57) from 100k on. Its Spearman ρ with score vs positional is −0.17 to −0.29 per condition, but −0.07 to +0.13 on the plateau alone (≥ 100k). The negative part comes from the learning phase, where the net beats its previous checkpoint because it is improving fast while its external score is still low. The self-play score follows the rate of improvement, not the level.
@@ -510,7 +516,7 @@ Self-play, inference, and evaluation come on top. **On CPU only, gradient steps 
 - **Gate 1 (Tue Nov 24, throughput):** measure 8×8 alongside 6×6, then set `games` in `configs/8x8.yaml` (and rescale `replay_capacity` to ≈ 10% of all transitions, both sides, D2). It passes if one 8×8 run of that budget fits in ≤ 24 h on hardware E2 doesn't need. A CPU-only setup fails.
 - **Gate 2 (Mon Nov 30, pilot review):** it passes if (a) the 6×6 pilots learned (≥ 50% vs positional, the §7 bar) and (b) P8 reached ≥ 50% vs positional on 8×8. *Passed Nov 25, reviewed early once every pilot had finished: the 6×6 pilots score 0.88–0.92 vs positional, and P8 scores 0.88.*
 - **Cutoffs:** results by Sun Dec 6 earn a slide; results by Mon Dec 14 go in the report; later results are dropped. 8×8 never takes compute from E2, and it never justifies a code change after M2.
-- **Scope:** score vs random/greedy/positional, self-play score (D5), and F9. No cross-play, regret, or endgame metrics on 8×8.
+- **Scope:** score vs random/greedy/positional, self-play score (D5), F9, and *(added Nov 27)* E3's round robins, which run on the CPU in minutes (§4.7). No regret or endgame metrics on 8×8.
 
 ### 4.9 Figures
 
@@ -674,8 +680,9 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 **Tue Dec 1** (~4 h) — **M2: experiment code freeze**
 - [x] Launch **E2** (6×6 2×2, 12 runs, endgame accuracy in eval): `caffeinate -i make sweep-6x6` on the laptop GPU, four at a time in three batches, ~8½ h at 200k or ~16½ h at 400k. *(Pulled forward to Nov 25, 400k, chained with E6: `caffeinate -i sh -c 'make sweep-6x6 && make sweep-8x8'`. Commit first, so every `meta.json` records a clean commit. A CPU smoke run of E2's config, negamax-pool with the live endgame eval, passed that night. **Done Nov 26:** launched 01:42, finished 20:37, 12/12 runs clean at 6b040df. Results in §4.8.)*
 - [x] If gate 2 passed: launch **E6** (8×8 A pair) ~~on hardware E2 doesn't use~~ on the laptop GPU once E2 has finished (`make sweep-8x8`), on Dec 2 at the latest. *(Nov 25: runs straight after E2 in the same chain. Three new runs: A-naive seed 1, A-pool seeds 0 and 1. A CPU smoke run of 8×8 A-pool, the one 8×8 path P8 didn't exercise, passed. Started Nov 26 20:37, straight after E2.)*
+- [ ] *(If time)* **E2+**: `make sweep-6x6-extra` once E6 has finished (8 runs, ~13 h on the GPU). Follow §4.8's rules: run both seeds, analyse once at 5 seeds, then regenerate E2's figures and T1.
 - [x] Analysis scripts: seed-band curves, §4.7 summary numbers, Spearman ρ, H4 gap. *(Done Nov 24, §4.9: F1, F2, F3, F5, T1. E1's F1, F3 and T1 are in `figures/e1-4x4/` and `tables/e1-4x4/`.)*
-- [ ] Cross-play script; run E3 on 4×4.
+- [ ] Cross-play script; run E3 on 4×4. *(Nov 27: both kinds of round robin, within and across runs (§4.7). Run them on 6×6 as well as soon as the script exists, and on 8×8 once E6 finishes.)*
 
 **Wed Dec 2** (~4–5 h)
 - [ ] `regret.py`: self-history + held-out references; true regret with π\* on 4×4. Run E5 on 4×4.
@@ -689,7 +696,7 @@ Hours are estimates: ≈ 65 h through Dec 10 and ≈ 15–20 h for Dec 11–17. 
 
 **Fri Dec 4** (~4–5 h)
 - [ ] E2 done: 6×6 F2, F4, F5, T1; run E5 on 6×6 → F7. *(Nov 27: F2, F5 and T1 drawn from the finished runs. F4 and F7 wait for the cross-play and regret code.)*
-- [ ] If E6 finished: F9 (the F2/F3 code pointed at `e6-8x8`).
+- [ ] If E6 finished: F9 (the F2/F3 code pointed at `e6-8x8`), plus E6's round robins.
 - [ ] Pick the demo board size (6×6 or 8×8), snapshots, and teaching positions (§5.3); export final ONNX + `manifest/curves/heatmaps.json`.
 
 **Sat Dec 5** (~3–4 h) — **M3**
@@ -748,7 +755,7 @@ No new experiments in report week. Extra seeds may run in the background if they
 3. **Two views of self-play (D1):** opponent-as-environment (learn a best response; passes are just dynamics) vs negamax (learn the minimax value; passes need explicit sign flips). Use a small diagram. Prediction: the pool should matter more for the first view.
 4. **Setup:** the 2×2, boards, reference opponents, solvers as ground truth.
 5. **4×4 results:** F1 (accuracy against exact play) + T1.
-6. **6×6 results:** F2, H4 gap. *(If F9 exists by Dec 6)* one 8×8 slide: does the A-row result hold on the full board? One seed per arm.
+6. **6×6 results:** F2, H4 gap. *(If F9 exists by Dec 6)* one 8×8 slide: does the A-row result hold on the full board? Two seeds per arm.
 7. **What self-play hides:** F3 + F7. Earlier checkpoints beat the final agent from specific positions, and self-play score never shows it (MADRID's cross-play-minus-self-play idea).
 8. **Takeaways + demo:** "Watch it learn" (F6 or live demo).
 

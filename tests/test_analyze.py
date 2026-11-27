@@ -89,8 +89,9 @@ def test_t1_gaps_and_h4(logs, tmp_path):
     final = [c for c, _, _ in analyze.T1_COLUMNS].index("final")
     env_gap, se = rows["pool - naive (env)"][final]
     neg_gap, _ = rows["pool - naive (negamax)"][final]
-    # Every run is cut at 4,000 games (the running seed), so "final" is eval points 2-4 everywhere.
-    rise = np.mean([1 - np.exp(-i / 3) for i in (2, 3, 4)])
+    # Every run is cut at 4,000 games (the running seed), so "final" is eval points 0-4 everywhere
+    # (all of them, since that's fewer than 10). Without the cut, the finished seeds would use 0-7.
+    rise = np.mean([1 - np.exp(-i / 3) for i in range(5)])
     assert env_gap == pytest.approx(0.10 * rise, abs=0.015) and se > 0
     assert neg_gap == pytest.approx(0.02 * rise, abs=0.015)
     assert rows["H4: env gap - negamax gap"][final][0] == pytest.approx(env_gap - neg_gap)

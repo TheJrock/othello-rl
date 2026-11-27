@@ -37,3 +37,6 @@ docs/private/
 .DS_Store
 .vscode/
 .idea/
+
+# git worktrees, e.g. the checkout of E2's commit that `make sweep-6x6-extra` trains from
+.worktrees/
