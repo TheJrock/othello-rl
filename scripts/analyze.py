@@ -436,69 +436,131 @@ def fig_crossplay(exp: str, root: Path, out: Path) -> None:
     )
 
 
-def fig_crossplay_finals(exp: str, root: Path, out: Path) -> None:
-    """F4 (across runs): every run's final checkpoint against every other's, from
-    runs/<exp>/crossplay_finals.json. Writes f4_finals.pdf, three panels:
-
-    1. the full matrix, runs grouped by condition (thin white lines between the groups);
-    2. the mean of each condition-against-condition block (evaluate.block_means), value printed:
-       these are the head-to-head numbers (1 and 2 share the colour scale);
-    3. each run's mean score against every run of the other conditions, one dot per seed (colour =
-       sampler, as in F1-F3), with the condition's mean as a bar: the seed spread behind panel 2."""
-    path = root / exp / rundir.CROSSPLAY_FINALS_FILE
-    if not path.exists():
-        raise Skip(f"no {path.name} for {exp} (make crossplay EXPS={exp})")
-    result = json.loads(path.read_text())
-    m = np.array(result["score"], dtype=float)
+def finals_measures(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """The across-run file's matrices, each with what F4 draws from it: the opening-bank one, then
+    (file format 2 on) the start-position one. Each: title, matrix m, groups (each run's
+    condition), names and blocks (evaluate.block_means), vs_others (each run's mean score against
+    every run of the other conditions)."""
     groups = [p["run"].split("/")[0] for p in result["players"]]
-    names, blocks = block_means(m, groups)
+    matrices = [
+        (
+            f"From the opening bank: final checkpoints, {result['games_per_pair']} games a pair",
+            result["score"],
+        )
+    ]
+    if "start" in result:
+        start = result["start"]
+        title = (
+            f"From the starting position: each run's last {len(start['players'])} checkpoints, "
+            f"{start['games_per_pair']} games a pair"
+        )
+        matrices.append((title, start["score"]))
+    measures = []
+    groups_arr = np.array(groups)
+    for title, score in matrices:
+        m = np.array(score, dtype=float)
+        names, blocks = block_means(m, groups)
+        vs_others = np.array([m[i, groups_arr != g].mean() for i, g in enumerate(groups)])
+        measures.append(
+            {
+                "title": title,
+                "m": m,
+                "groups": groups,
+                "names": names,
+                "blocks": blocks,
+                "vs_others": vs_others,
+            }
+        )
+    return measures
+
+
+def _dots_ylim(measures: Sequence[dict[str, Any]]) -> tuple[float, float]:
+    """The each-run panels' shared y range: every row's dots and the even line, padded 8%."""
+    values = np.concatenate([[0.5], *(m["vs_others"] for m in measures)])
+    pad = max(0.08 * (values.max() - values.min()), 0.005)
+    return float(values.min() - pad), float(values.max() + pad)
+
+
+def _finals_row(sub, measure: dict[str, Any], top: bool) -> plt.Axes:
+    """One row of f4_finals.pdf, drawn into a subfigure: full matrix, block means, each run. Returns
+    the each-run axes, so the rows can share its y axis."""
+    m, groups, names, blocks = measure["m"], measure["groups"], measure["names"], measure["blocks"]
     cmap, vmin, vmax = _diverging(_vlim(m))
     labels = [_cond_name(n) for n in names]
     two_line = [lab.replace("-", "\n") for lab in labels]
     edges = np.flatnonzero([a != b for a, b in itertools.pairwise(groups)]) + 0.5  # between condition groups
     centres = [np.mean([i for i, g in enumerate(groups) if g == n]) for n in names]
     groups_arr = np.array(groups)
-    vs_others = np.array([m[i, groups_arr != g].mean() for i, g in enumerate(groups)])
+    full, block, runs = sub.subplots(1, 3, gridspec_kw={"width_ratios": [1, 1, 1.1]})
+    sub.suptitle(measure["title"], x=0.01, ha="left", fontsize=8, color=INK)
+
+    image = full.imshow(m, cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
+    for e in edges:
+        full.axhline(e, color="white", linewidth=1.2)
+        full.axvline(e, color="white", linewidth=1.2)
+    full.set_xticks(centres, two_line)
+    full.set_yticks(centres, labels)
+    _heatmap_axes(full)
+
+    block.imshow(blocks, cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
+    for i in range(len(names)):
+        for j in range(len(names)):
+            if not np.isnan(blocks[i, j]):
+                dark = abs(blocks[i, j] - 0.5) > 0.6 * (vmax - 0.5)  # white text on the darkest cells
+                block.text(j, i, f"{blocks[i, j]:.3f}", ha="center", va="center", fontsize=6,
+                           color="white" if dark else INK)  # fmt: skip
+    block.set_xticks(range(len(names)), two_line)
+    block.set_yticks(range(len(names)), [])
+    _heatmap_axes(block)
+    _colorbar(sub, image, [full, block], vmin, vmax, "row's score")
+
+    vs_others = measure["vs_others"]
+    for x, name in enumerate(names):
+        ys = vs_others[groups_arr == name]
+        color = COLORS[name.split("-", 1)[1]]
+        offsets = np.linspace(-0.12, 0.12, len(ys)) if len(ys) > 1 else np.zeros(1)
+        runs.scatter(x + offsets, ys, s=10, color=color, linewidths=0, zorder=3)
+        runs.plot([x - 0.25, x + 0.25], [ys.mean()] * 2, color=INK_2, linewidth=1.2, zorder=2)
+    runs.axhline(0.5, color=MUTED, linewidth=1.0, linestyle=(0, (1, 1.5)), zorder=1)  # even; unlabelled,
+    # since dots can sit anywhere along it
+    runs.set_xticks(range(len(names)), two_line)
+    runs.set_xlim(-0.5, len(names) - 0.5)
+    runs.tick_params(axis="x", length=0)
+    runs.set_ylabel("vs other conditions")
+    if top:  # the panels are the same in every row, so only the top one names them
+        full.set_title(f"{len(groups)} runs", loc="left", color=INK)
+        block.set_title("block means", loc="left", color=INK)
+        runs.set_title("each run (bar = mean)", loc="left", color=INK)
+    return runs
+
+
+def fig_crossplay_finals(exp: str, root: Path, out: Path) -> None:
+    """F4 (across runs), from runs/<exp>/crossplay_finals.json. Writes f4_finals.pdf: one row per
+    matrix in the file (finals_measures), first the opening bank's (every run's final checkpoint),
+    then the starting position's (scripts/crossplay.py), each with three panels:
+
+    1. the full matrix, runs grouped by condition (thin white lines between the groups);
+    2. the mean of each condition-against-condition block (evaluate.block_means), value printed:
+       these are the head-to-head numbers (1 and 2 share the row's colour scale);
+    3. each run's mean score against every run of the other conditions, one dot per seed (colour =
+       sampler, as in F1-F3), with the condition's mean as a bar: the seed spread behind panel 2.
+
+    Each row has its own colour scale, because the start position's differences are several times
+    the bank's, but panel 3 shares its y axis across the rows, so the sizes compare directly."""
+    path = root / exp / rundir.CROSSPLAY_FINALS_FILE
+    if not path.exists():
+        raise Skip(f"no {path.name} for {exp} (make crossplay EXPS={exp})")
+    measures = finals_measures(json.loads(path.read_text()))
 
     with plt.rc_context(STYLE):
-        fig, (full, block, runs) = plt.subplots(
-            1, 3, figsize=(WIDTH, 1.7), layout="constrained", gridspec_kw={"width_ratios": [1, 1, 1.1]}
-        )
-        image = full.imshow(m, cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
-        for e in edges:
-            full.axhline(e, color="white", linewidth=1.2)
-            full.axvline(e, color="white", linewidth=1.2)
-        full.set_xticks(centres, two_line)
-        full.set_yticks(centres, labels)
-        full.set_title(f"{len(groups)} finals", loc="left", color=INK)
-        _heatmap_axes(full)
-
-        block.imshow(blocks, cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
-        for i in range(len(names)):
-            for j in range(len(names)):
-                if not np.isnan(blocks[i, j]):
-                    dark = abs(blocks[i, j] - 0.5) > 0.6 * (vmax - 0.5)  # white text on the darkest cells
-                    block.text(j, i, f"{blocks[i, j]:.3f}", ha="center", va="center", fontsize=6,
-                               color="white" if dark else INK)  # fmt: skip
-        block.set_xticks(range(len(names)), two_line)
-        block.set_yticks(range(len(names)), [])
-        block.set_title("block means", loc="left", color=INK)
-        _heatmap_axes(block)
-        _colorbar(fig, image, [full, block], vmin, vmax, "row's score")
-
-        for x, name in enumerate(names):
-            ys = vs_others[groups_arr == name]
-            color = COLORS[name.split("-", 1)[1]]
-            offsets = np.linspace(-0.12, 0.12, len(ys)) if len(ys) > 1 else np.zeros(1)
-            runs.scatter(x + offsets, ys, s=10, color=color, linewidths=0, zorder=3)
-            runs.plot([x - 0.25, x + 0.25], [ys.mean()] * 2, color=INK_2, linewidth=1.2, zorder=2)
-        runs.axhline(0.5, color=MUTED, linewidth=1.0, linestyle=(0, (1, 1.5)), zorder=1)  # even; unlabelled,
-        # since dots can sit anywhere along it
-        runs.set_xticks(range(len(names)), two_line)
-        runs.set_xlim(-0.5, len(names) - 0.5)
-        runs.tick_params(axis="x", length=0)
-        runs.set_ylabel("vs other conditions")
-        runs.set_title("each run (bar = mean)", loc="left", color=INK)
+        fig = plt.figure(figsize=(WIDTH, 1.95 * len(measures)), layout="constrained")
+        subs = fig.subfigures(len(measures), 1, squeeze=False)[:, 0]
+        runs_axes = [
+            _finals_row(sub, measure, top=i == 0) for i, (sub, measure) in enumerate(zip(subs, measures))
+        ]
+        for ax in runs_axes[1:]:
+            ax.sharey(runs_axes[0])
+        runs_axes[0].set_ylim(*_dots_ylim(measures))  # shared, so it sets every row's
         _save(fig, out / "f4_finals.pdf")
         plt.close(fig)
 

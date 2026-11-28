@@ -9,6 +9,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from othello_rl.evaluate import block_means
+
 _spec = importlib.util.spec_from_file_location(
     "analyze", Path(__file__).resolve().parents[1] / "scripts" / "analyze.py"
 )
@@ -118,10 +120,10 @@ def test_one_seed_has_no_spread(tmp_path):
 # --- F4: cross-play (scripts/crossplay.py's files) ------------------------------------------------
 
 
-def _crossplay_file(path, players, score, kind="within"):
+def _crossplay_file(path, players, score, kind="within", **extra):
     path.parent.mkdir(parents=True, exist_ok=True)
     (path.parent / "config.yaml").touch()  # rundir.find_runs only needs it to exist
-    path.write_text(json.dumps({"kind": kind, "players": players, "score": score}))
+    path.write_text(json.dumps({"kind": kind, "players": players, "score": score, **extra}))
 
 
 def _antisymmetric(k, rng):
@@ -137,7 +139,8 @@ def _json(m):
 
 @pytest.fixture
 def crossplay_runs(tmp_path):
-    """Two seeds of each condition, 4 checkpoints each, plus an across-run file of all 8 finals."""
+    """Two seeds of each condition, 4 checkpoints each, plus an across-run file of all 8 finals with
+    a start-position matrix over each run's last 3 checkpoints."""
     rng = np.random.default_rng(0)
     root = tmp_path / "runs"
     games = [1000, 2000, 3000, 4000]
@@ -152,17 +155,24 @@ def crossplay_runs(tmp_path):
                 within[(target, sampling, seed)] = m
     runs = [f"{t}-{s}/seed{k}" for t in ("env", "negamax") for s in ("naive", "pool") for k in (0, 1)]
     finals = _antisymmetric(len(runs), rng)
+    start = np.round(_antisymmetric(len(runs), rng) * 6) / 6  # 6 games a pair
     _crossplay_file(
         root / "t" / "crossplay_finals.json",
         [{"run": r, "games": 4000} for r in runs],
         _json(finals),
         "across",
+        games_per_pair=24,
+        start={
+            "players": [[{"run": r, "games": g} for r in runs] for g in (2000, 3000, 4000)],
+            "score": _json(start),
+            "games_per_pair": 6,
+        },
     )
-    return root, games, within, finals
+    return root, games, within, finals, start
 
 
 def test_crossplay_mean_and_final_rows(crossplay_runs):
-    root, games, within, _ = crossplay_runs
+    root, games, within, *_ = crossplay_runs
     results = analyze.load_crossplay("t", root)
     assert sorted(results) == [("env", "naive"), ("env", "pool"), ("negamax", "naive"), ("negamax", "pool")]
     g, stack = analyze.crossplay_mean(results[("env", "pool")])
@@ -189,6 +199,32 @@ def test_crossplay_figures_are_written(crossplay_runs, tmp_path):
     for name in ("f4_crossplay", "f4_final_vs_earlier", "f4_finals"):
         pdf = (tmp_path / f"{name}.pdf").read_bytes()
         assert len(pdf) > 1000 and b"/CreationDate" not in pdf
+
+
+def test_finals_measures_bank_then_start(crossplay_runs):
+    root, _, _, finals, start = crossplay_runs
+    result = json.loads((root / "t" / "crossplay_finals.json").read_text())
+    bank, from_start = analyze.finals_measures(result)
+    assert bank["title"] == "From the opening bank: final checkpoints, 24 games a pair"
+    assert from_start["title"] == "From the starting position: each run's last 3 checkpoints, 6 games a pair"
+    groups = [r.split("/")[0] for r in (p["run"] for p in result["players"])]
+    for measure, m in ((bank, finals), (from_start, start)):
+        np.testing.assert_array_equal(measure["m"], m)
+        names, blocks = block_means(m, groups)
+        assert measure["names"] == names and measure["groups"] == groups
+        np.testing.assert_array_equal(measure["blocks"], blocks)
+        # each run against every run of the other three conditions: 6 of the other 7 runs here
+        i = 5
+        others = [j for j in range(8) if groups[j] != groups[i]]
+        assert measure["vs_others"][i] == pytest.approx(np.mean(m[i, others]))
+
+    lo, hi = analyze._dots_ylim([bank, from_start])  # one range for every row's dots, and even
+    every = np.concatenate([bank["vs_others"], from_start["vs_others"], [0.5]])
+    assert lo < every.min() and hi > every.max() and hi - lo < 1.2 * (every.max() - every.min())
+    assert analyze._dots_ylim([{"vs_others": np.array([0.6, 0.7])}])[0] < 0.5  # even stays in view
+
+    del result["start"]  # a file from before the start matrix: the bank row alone
+    assert [m["title"] for m in analyze.finals_measures(result)] == [bank["title"]]
 
 
 def test_crossplay_figures_skip_without_files(tmp_path):

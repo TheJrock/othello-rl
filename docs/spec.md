@@ -598,8 +598,12 @@ Self-play, inference, and evaluation come on top. **On CPU only, gradient steps 
 - **F4 files:**
   - `f4_crossplay.pdf`: one heatmap per condition, mean over seeds (the seeds share their checkpoints, so the cells line up). Cell (i, j) is checkpoint i's score against checkpoint j, from the first trained checkpoint (top left) to the final one (bottom right).
   - `f4_final_vs_earlier.pdf`: the heatmaps' bottom rows as curves, in F1's layout: the final checkpoint's score against each earlier one, mean and min–max band over seeds. Below the dotted line, an earlier checkpoint beats the final one (H2).
-  - `f4_finals.pdf`, three panels: the across-run matrix, runs grouped by condition; its condition-vs-condition block means, with the values printed (`evaluate.block_means`, shared with `scripts/crossplay.py`); and each run's mean score against every run of the other conditions, one dot per seed, which shows the seed spread behind the block means.
-- **F4 colours:** the dataviz diverging pair, blue ↔ red with a neutral grey midpoint at 0.5. Blue means the row player scores more than half. The blue arm is the palette's sequential ramp (steps 200, 450, 650); the red arm matches it in OKLab lightness at every step (0.81, 0.58, 0.39), so neither side looks bigger. The scale is symmetric around 0.5 and rounded up to 0.05, and each figure's panels share one scale.
+  - `f4_finals.pdf`: one row of three panels per matrix in `crossplay_finals.json`. The top row is from the opening bank (final checkpoints). The bottom row is from the starting position (each run's last 5 checkpoints, §4.7), added Nov 27; a file without a start matrix draws the top row alone. The three panels:
+    - the across-run matrix, runs grouped by condition;
+    - its condition-vs-condition block means, with the values printed (`evaluate.block_means`, shared with `scripts/crossplay.py`);
+    - each run's mean score against every run of the other conditions, one dot per seed, which shows the seed spread behind the block means.
+    - **Scales:** the rows have separate colour scales, because the start position's differences are several times the bank's. The per-run panels share one y axis across the rows, so the sizes compare directly. On 6×6 the bank's dots run 0.48–0.52, while the start position's run 0.32–0.76. The start-position condition means are A-naive .41, A-pool .40, N-naive .54 and N-pool .65. On 4×4 the start row is ~0.5 throughout, since White wins nearly every game.
+- **F4 colours:** the dataviz diverging pair, blue ↔ red with a neutral grey midpoint at 0.5. Blue means the row player scores more than half. The blue arm is the palette's sequential ramp (steps 200, 450, 650); the red arm matches it in OKLab lightness at every step (0.81, 0.58, 0.39), so neither side looks bigger. The scale is symmetric around 0.5 and rounded up to 0.05. Each figure's panels share one scale, except `f4_finals.pdf`, where each row has its own.
 
 Conventions:
 - **Layout:** two panels, env | negamax, colour = sampler. Curves are the mean over seeds, with a band spanning the lowest to highest seed. Only eval points every seed has reached are used, so a run still in progress shortens its curve rather than skewing it.
@@ -611,7 +615,15 @@ Conventions:
 - **T1 outputs:** a bare booktabs tabular with the report's condition macros, plus a plain-text copy (`t1_summary.txt`). Condition rows are mean ± sd over seeds; gap rows (pool − naive per target, and H4 = env gap − negamax gap) are difference of means ± SE.
 - **Commit `figures/` and `tables/` only for finished experiments.** The report includes them by path, and `runs/` isn't committed, so they're how the results reach the repo. A pilot's or a running experiment's figures are snapshots that would go stale.
 - **Figures are reproducible byte for byte:** PDFs are saved without a creation date, so redrawing unchanged data leaves committed files unchanged in git. *(Added Nov 25; the redraw changed E1's committed PDFs once.)* That holds only for a fixed environment. On Nov 27 a `uv run` re-synced `.venv` and upgraded four small packages: fonttools, pyyaml, filelock and packaging. torch, numpy and matplotlib were untouched. The fonttools upgrade changes the embedded font bytes of every PDF but not one pixel: all 12 E1/E2 figures rendered identically at 200 dpi. Use the Makefile's `.venv/bin/python`, not `uv run`.
-- **Tests:** `tests/test_analyze.py` and `tests/test_evaluate.py`. Nine planted bugs (drawdown window, event counting, threshold strictness, final, curve alignment, gap and H4 signs, the T1 cutoff, std from one seed) were all caught. For F4, seven more were caught too (Nov 27): the earlier checkpoint's score plotted instead of the final's, mismatched seeds averaged, the colour scale rounded to nearest (which can clip), no minimum scale, conditions keyed backwards, transposed block means, and the PDF timestamp back.
+- **Tests:** `tests/test_analyze.py` and `tests/test_evaluate.py`. Nine planted bugs (drawdown window, event counting, threshold strictness, final, curve alignment, gap and H4 signs, the T1 cutoff, std from one seed) were all caught. For F4, seven more were caught too (Nov 27): the earlier checkpoint's score plotted instead of the final's, mismatched seeds averaged, the colour scale rounded to nearest (which can clip), no minimum scale, conditions keyed backwards, transposed block means, and the PDF timestamp back. For the start-position row, eight more were caught:
+  - the bank matrix drawn in the start row;
+  - a run's own condition counted in its mean;
+  - the shared y range taken from the top row only, or leaving out the even line;
+  - the title's games per pair or checkpoint count wrong;
+  - the rows swapped;
+  - a crash on files without a start matrix.
+
+  The even-line case was missed at first, since the fixture's dots straddle 0.5, and a test was added for it.
 
 ---
 
