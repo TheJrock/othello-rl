@@ -15,6 +15,7 @@ import torch
 
 from othello_rl import evaluate, nets, rundir
 from othello_rl.config import Config
+from othello_rl.engine import initial
 from othello_rl.evaluate import opening_bank, save_states
 from othello_rl.players import NetPlayer
 
@@ -96,6 +97,66 @@ def test_within_run_round_robin(exp, capsys):
     direct = evaluate.crossplay_matrix(players, openings, np.random.default_rng(crossplay.RNG_SEED))
     np.testing.assert_array_equal(m, direct)
 
+    # The start-position matrix: the same checkpoints, one game a colour from engine.initial.
+    start = result["start"]
+    assert start["players"] == [result["players"]] and start["games_per_pair"] == 2
+    from_start = evaluate.crossplay_matrix(players, [initial(4)], np.random.default_rng(crossplay.RNG_SEED))
+    np.testing.assert_array_equal(crossplay.score_matrix(result, start=True), from_start)
+    assert set(from_start[~np.eye(3, dtype=bool)]) <= {0, 0.25, 0.5, 0.75, 1}
+
+
+def _finish(run, last=GAMES, salt=5):
+    cfg = rundir.load_run_config(run)
+    for g in range(len(rundir.list_checkpoints(run)), last + 1):
+        nets.save_checkpoint(rundir.checkpoint_path(run, g), _net(cfg, 100 * salt + g))
+
+
+def test_across_start_matrix_averages_each_runs_last_checkpoints(exp, capsys):
+    root, runs, unfinished = exp
+    _finish(unfinished)
+    runs = [*runs, unfinished]
+    _main(root, "--kind", "across", "--start-checkpoints", "3")
+    result = json.loads((root / "t" / rundir.CROSSPLAY_FINALS_FILE).read_text())
+    start = result["start"]
+    assert [[p["games"] for p in level] for level in start["players"]] == [[3] * 4, [4] * 4, [5] * 4]
+    assert start["games_per_pair"] == 6 and result["format"] == crossplay.FORMAT
+
+    def matrix(games):
+        players = [
+            NetPlayer(nets.load_net(rundir.checkpoint_path(r, games), rundir.load_run_config(r)))
+            for r in runs
+        ]
+        return evaluate.crossplay_matrix(players, [initial(4)], np.random.default_rng(crossplay.RNG_SEED))
+
+    expected = np.mean([matrix(g) for g in (3, 4, 5)], axis=0)
+    np.testing.assert_allclose(crossplay.score_matrix(result, start=True), expected)
+    assert "from the starting position, each run's last 3 checkpoints" in capsys.readouterr().out
+
+    # Another --start-checkpoints changes the across file only; the within files don't use it.
+    _main(root)
+    capsys.readouterr()
+    _main(root, "--start-checkpoints", "2")
+    out = capsys.readouterr().out
+    assert "1 round robins" in out and out.count("up to date") == 4
+
+    # More than a run has: every trained checkpoint, never the untrained one.
+    _main(root, "--kind", "across", "--start-checkpoints", "10")
+    result = json.loads((root / "t" / rundir.CROSSPLAY_FINALS_FILE).read_text())
+    assert [level[0]["games"] for level in result["start"]["players"]] == [1, 2, 3, 4, 5]
+
+
+def test_files_of_an_older_format_are_recomputed(exp, capsys):
+    root, runs, _ = exp
+    _main(root, "--kind", "within")
+    old = json.loads((runs[0] / rundir.CROSSPLAY_FILE).read_text())
+    del old["format"], old["start"]  # as the first version of the script wrote it
+    (runs[0] / rundir.CROSSPLAY_FILE).write_text(json.dumps(old))
+    capsys.readouterr()
+    _main(root, "--kind", "within")
+    out = capsys.readouterr().out
+    assert "1 round robins" in out and out.count("up to date") == 2
+    assert "start" in json.loads((runs[0] / rundir.CROSSPLAY_FILE).read_text())
+
 
 def test_skips_what_is_up_to_date_and_recomputes_what_changed(exp, capsys):
     root, runs, unfinished = exp
@@ -161,16 +222,18 @@ def test_worker_processes(exp):
     assert all((r / rundir.CROSSPLAY_FILE).exists() for r in runs)
 
 
-def _result(kind, players, score):
-    return {"kind": kind, "players": players, "score": score}
+def _result(kind, players, score, start_score=None, levels=1):
+    start = {"players": [players] * levels, "score": score if start_score is None else start_score}
+    return {"kind": kind, "players": players, "score": score, "start": start}
 
 
 def test_describe_within():
     players = [{"run": "env-naive/seed0", "games": g} for g in (1000, 2000, 3000)]
-    result = _result("within", players, [[None, 0.5, 0.2], [0.5, None, 0.6], [0.8, 0.4, None]])
+    start = [[None, 0.5, 0.25], [0.5, None, 0.0], [0.75, 1.0, None]]
+    result = _result("within", players, [[None, 0.5, 0.2], [0.5, None, 0.6], [0.8, 0.4, None]], start)
     assert crossplay.describe(result) == (
         "3 checkpoints 1k-3k; against the final one the best earlier checkpoint (2k) scores 0.600, "
-        "the first (1k) 0.200"
+        "the first (1k) 0.200; from the start the final one scores 0.875 against the earlier ones"
     )
     one = _result("within", players[:1], [[None]])
     assert crossplay.describe(one) == "one checkpoint, nothing to play"
@@ -184,7 +247,12 @@ def test_condition_blocks():
         [0.1, 0.4, None, 0.5],
         [0.3, 0.2, 0.5, None],
     ]
-    names, blocks = crossplay.condition_blocks(_result("across", players, score))
+    start = [[None, 0.5, 0.0, 0.5], [0.5, None, 0.25, 0.25], [1.0, 0.75, None, 0.5], [0.5, 0.75, 0.5, None]]
+    result = _result("across", players, score, start, levels=5)
+    names, blocks = crossplay.condition_blocks(result)
     assert names == ["a", "b"]
     np.testing.assert_allclose(blocks, [[np.nan, 0.75], [0.25, np.nan]])
-    assert "0.750" in crossplay.describe(_result("across", players, score))
+    _, from_start = crossplay.condition_blocks(result, start=True)
+    np.testing.assert_allclose(from_start, [[np.nan, 0.25], [0.75, np.nan]])
+    text = crossplay.describe(result)
+    assert "0.750" in text and "each run's last 5 checkpoints" in text.splitlines()[4]
