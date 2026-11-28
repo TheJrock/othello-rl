@@ -291,6 +291,17 @@ def crossplay_matrix(
     return m
 
 
+def block_means(m: np.ndarray, groups: Sequence[str]) -> tuple[list[str], np.ndarray]:
+    """Group a cross-play matrix by player group (e.g. condition): the groups in order of first
+    appearance, and B[a, b] = mean of M[i, j] over i in group a and j in group b. Same-group blocks
+    are NaN: they average to exactly 0.5 by construction (each pair's two cells add to 1), and with
+    one player per group there is nothing to average."""
+    names = list(dict.fromkeys(groups))
+    member = {a: np.array([g == a for g in groups]) for a in names}
+    blocks = [[np.nan if a == b else m[np.ix_(member[a], member[b])].mean() for b in names] for a in names]
+    return names, np.array(blocks, dtype=float)
+
+
 FINAL_POINTS = 10  # summarize_run's "final" window, in eval points (spec §4.7; 3 until Nov 27)
 
 

@@ -139,7 +139,7 @@ The full details and numbers live in `docs/spec.md` (section refs in brackets).
 - [x] **T1's "final" window:** last 3 eval points or the last 10? **The last 10, on every board** (decided Nov 27; spec §4.7). E1's and E2's T1 regenerated.
 - [ ] **E2+ (in the plan Nov 27, if time):** E2 seeds 3–4 after E6, `make sweep-6x6-extra` (spec §4.8 row E2+). Rules fixed in advance: both seeds, one analysis at 5 seeds, no further extension. In the report, say it was added after 3 seeds (optional stopping) and keep the 3-seed numbers.
 - [x] E3 addition: an across-run round robin of every final checkpoint (pool vs naive, A vs N, head-to-head), alongside the within-run ones. **In the plan for all three boards** (Nov 27, spec §4.7).
-- [ ] A-pool's flat curve: is pool slowing A's early learning slightly (lower peak), or protecting it from the decline?
+- [ ] A-pool's flat curve: is pool slowing A's early learning slightly (lower peak), or protecting it from the decline? *F4 (Nov 27) leans towards slower learning: A-pool's final checkpoint still scores 0.52–0.54 against its own 5k–13k checkpoints, where A-naive's scores 0.50–0.53 (`figures/e1-4x4/f4_final_vs_earlier.pdf`, the blue block in `f4_crossplay.pdf`). So A-pool keeps improving in play for longer. Small (~2 points) and 5 seeds; check against the accuracy curves before using it.*
 - [ ] If citing a training-time pool sampling rule, check how TiZero (MADRID's ref. [29]) samples opponents. [§4.6]
 - [ ] E7 (old settings) if there's spare compute: is the settings change itself a finding?
 - [ ] `learner_score` in the logs comes from training games with ε on. Don't plot it as a strength measure.

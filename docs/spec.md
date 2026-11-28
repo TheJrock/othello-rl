@@ -553,7 +553,7 @@ Self-play, inference, and evaluation come on top. **On CPU only, gradient steps 
 | F1 | 4×4 optimal-move accuracy vs games: two panels (A, N), naive vs pool, seed bands + chance line | slides, report |
 | F2 | 6×6 score vs positional (and random/greedy in the appendix), same two-panel layout | slides, report |
 | **F3** | **Self-play score and external score on the same axes, flat line vs moving line** (headline figure) | slides, report, demo |
-| F4 | Cross-play heatmaps, naive vs pool | report (slides if striking) |
+| F4 | Cross-play heatmaps, naive vs pool. *(Nov 27: three files per experiment, below)* | report (slides if striking) |
 | F5 | 6×6 endgame accuracy vs games | report |
 | F6 | Q-value heatmaps on 2–3 teaching positions across checkpoints | slides, demo |
 | **F7** | **Self-history regret by reference checkpoint index for final naive vs pool agents** (MADRID Fig. 4b analog), plus a regret grid over (empties × disc differential) (Fig. 6 analog) | slides, report |
@@ -562,7 +562,14 @@ Self-play, inference, and evaluation come on top. **On CPU only, gradient steps 
 | F9 | *(Could, E6)* 8×8: score vs positional and self-play score, A-naive vs A-pool, two seeds each (F2/F3 layout, same code) | report; slides if done by Dec 6 |
 | F10 | *(Could, E7)* 4×4 accuracy vs games (F1 layout), old vs new settings, per condition with seed bands. Does faster value propagation help every condition equally, or does it change the naive-vs-pool gap? | report (discussion or appendix) |
 
-*Implemented Nov 24 (`scripts/analyze.py`, `make figures`; `EXPS=...` picks experiments): F1, F2 (+ `f2_scores_appendix.pdf` with random and greedy), F3, F5, T1.* F4 waits only for its drawing code, since the matrices exist (Nov 27, E3); F7 and F8 wait for `regret.py`. Conventions:
+*Implemented Nov 24 (`scripts/analyze.py`, `make figures`; `EXPS=...` picks experiments): F1, F2 (+ `f2_scores_appendix.pdf` with random and greedy), F3, F5, T1.* *F4 implemented Nov 27* (from `make crossplay`'s files; [skip] until they exist). F7 and F8 wait for `regret.py`.
+- **F4 files:**
+  - `f4_crossplay.pdf`: one heatmap per condition, mean over seeds (the seeds share their checkpoints, so the cells line up). Cell (i, j) is checkpoint i's score against checkpoint j, from the first trained checkpoint (top left) to the final one (bottom right).
+  - `f4_final_vs_earlier.pdf`: the heatmaps' bottom rows as curves, in F1's layout: the final checkpoint's score against each earlier one, mean and min–max band over seeds. Below the dotted line, an earlier checkpoint beats the final one (H2).
+  - `f4_finals.pdf`, three panels: the across-run matrix, runs grouped by condition; its condition-vs-condition block means, with the values printed (`evaluate.block_means`, shared with `scripts/crossplay.py`); and each run's mean score against every run of the other conditions, one dot per seed, which shows the seed spread behind the block means.
+- **F4 colours:** the dataviz diverging pair, blue ↔ red with a neutral grey midpoint at 0.5. Blue means the row player scores more than half. The blue arm is the palette's sequential ramp (steps 200, 450, 650); the red arm matches it in OKLab lightness at every step (0.81, 0.58, 0.39), so neither side looks bigger. The scale is symmetric around 0.5 and rounded up to 0.05, and each figure's panels share one scale.
+
+Conventions:
 - **Layout:** two panels, env | negamax, colour = sampler. Curves are the mean over seeds, with a band spanning the lowest to highest seed. Only eval points every seed has reached are used, so a run still in progress shortens its curve rather than skewing it.
 - **T1 cutoff:** every run is cut at the shortest run's last eval point, and the table note says so.
 - **Reference lines** (chance, even score) are dotted and labelled.
@@ -572,7 +579,7 @@ Self-play, inference, and evaluation come on top. **On CPU only, gradient steps 
 - **T1 outputs:** a bare booktabs tabular with the report's condition macros, plus a plain-text copy (`t1_summary.txt`). Condition rows are mean ± sd over seeds; gap rows (pool − naive per target, and H4 = env gap − negamax gap) are difference of means ± SE.
 - **Commit `figures/` and `tables/` only for finished experiments.** The report includes them by path, and `runs/` isn't committed, so they're how the results reach the repo. A pilot's or a running experiment's figures are snapshots that would go stale.
 - **Figures are reproducible byte for byte:** PDFs are saved without a creation date, so redrawing unchanged data leaves committed files unchanged in git. *(Added Nov 25; the redraw changed E1's committed PDFs once.)*
-- **Tests:** `tests/test_analyze.py` and `tests/test_evaluate.py`. Nine planted bugs (drawdown window, event counting, threshold strictness, final, curve alignment, gap and H4 signs, the T1 cutoff, std from one seed) were all caught.
+- **Tests:** `tests/test_analyze.py` and `tests/test_evaluate.py`. Nine planted bugs (drawdown window, event counting, threshold strictness, final, curve alignment, gap and H4 signs, the T1 cutoff, std from one seed) were all caught. For F4, seven more were caught too (Nov 27): the earlier checkpoint's score plotted instead of the final's, mismatched seeds averaged, the colour scale rounded to nearest (which can clip), no minimum scale, conditions keyed backwards, transposed block means, and the PDF timestamp back.
 
 ---
 

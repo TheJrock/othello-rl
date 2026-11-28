@@ -17,6 +17,7 @@ every seed has reached (so a run that is still going shortens its condition's cu
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import math
 from collections import defaultdict
@@ -33,7 +34,7 @@ from matplotlib.lines import Line2D
 from matplotlib.ticker import FuncFormatter
 
 from othello_rl import rundir
-from othello_rl.evaluate import FINAL_POINTS, summarize_run
+from othello_rl.evaluate import FINAL_POINTS, block_means, summarize_run
 
 ROOT = Path(__file__).resolve().parents[1]
 Condition = tuple[str, str]  # (target, sampling)
@@ -132,18 +133,19 @@ def _plot_condition(ax: plt.Axes, runs, key: str, color: str, **line) -> int:
     return len(y)
 
 
-def _reference_line(ax: plt.Axes, y: float, label: str) -> None:
+def _reference_line(ax: plt.Axes, y: float, label: str, left: bool = False) -> None:
     """A labelled horizontal reference (chance, or an even score) in muted ink: dotted, so it never
     reads as the dashed self-play series, and labelled just under its right end, where the curves
-    (which rise above chance and hover above an even score) leave room."""
+    (which rise above chance and hover above an even score) leave room. `left` puts the label under
+    the left end instead, for curves that start far from the line and end on it."""
     ax.axhline(y, color=MUTED, linewidth=1.0, linestyle=(0, (1, 1.5)), zorder=1)
     ax.annotate(
         label,
-        (1.0, y),
+        (0.0 if left else 1.0, y),
         xycoords=("axes fraction", "data"),
-        xytext=(-2, -2),
+        xytext=(2 if left else -2, -2),
         textcoords="offset points",
-        ha="right",
+        ha="left" if left else "right",
         va="top",
         fontsize=6.5,
         color=INK_2,
@@ -189,6 +191,8 @@ def two_panel(
     height: float = 1.6,
     reference: tuple[float, str] | None = None,
     ylim: tuple[float, float] | None = None,
+    xlabel: str = "training games",
+    reference_left: bool = False,
 ) -> None:
     """The F1/F2/F5 layout: env | negamax panels, naive vs pool, seed bands, shared y axis."""
     if not any(curve(runs, key)[0].size for runs in logs.values()):
@@ -199,9 +203,9 @@ def two_panel(
             for sampling in SAMPLINGS:
                 _plot_condition(ax, logs.get((target, sampling), []), key, COLORS[sampling], label=sampling)
             if reference:
-                _reference_line(ax, *reference)
+                _reference_line(ax, *reference, left=reference_left)
             ax.set_title(TARGET_TITLES[target], loc="left", color=INK)
-            ax.set_xlabel("training games")
+            ax.set_xlabel(xlabel)
             _thousands(ax)
         axes[0].set_ylabel(ylabel)
         if ylim:
@@ -314,10 +318,189 @@ def fig_selfplay_vs_external(logs: Logs, out: Path, board: int = 6) -> None:
         plt.close(fig)
 
 
+# Cross-play (F4). Diverging colours, from the dataviz reference palette: blue <-> red with a neutral
+# grey midpoint, so an even score reads as "nothing". Blue = the row player scores more than half,
+# red = less. The blue arm is the palette's sequential ramp (steps 200, 450, 650); the red arm was
+# picked to match it in OKLab lightness at every step (0.81, 0.58, 0.39), so neither side looks bigger.
+DIVERGING = ["#7a1c1c", "#cf3f3d", "#f2aaa6", "#f0efec", "#9ec5f4", "#2a78d6", "#104281"]
+SHORT = {"env": "A", "negamax": "N"}  # condition names as the spec's tables write them: A-naive, N-pool
+
+
+def _cond_name(cond: Condition | str) -> str:
+    target, sampling = cond.split("-", 1) if isinstance(cond, str) else cond
+    return f"{SHORT[target]}-{sampling}"
+
+
+def load_crossplay(exp: str, root: Path) -> dict[Condition, list[dict[str, Any]]]:
+    """Within-run round robins (scripts/crossplay.py) by condition, one per seed that has one."""
+    results: dict[Condition, list[dict[str, Any]]] = defaultdict(list)
+    for run in rundir.find_runs(root, exp):
+        path = run / rundir.CROSSPLAY_FILE
+        if path.exists():
+            target, sampling, _ = rundir.run_condition(run)
+            results[(target, sampling)].append(json.loads(path.read_text()))
+    return dict(results)
+
+
+def crossplay_mean(results: Sequence[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray]:
+    """(checkpoint games, score matrices stacked over seeds). The seeds of a condition share their
+    eval schedule, so they played the same checkpoints and their matrices line up cell for cell."""
+    games = {tuple(p["games"] for p in r["players"]) for r in results}
+    if len(games) != 1:
+        raise ValueError(f"seeds of one condition played different checkpoints: {sorted(games)}")
+    return np.array(games.pop()), np.stack([np.array(r["score"], dtype=float) for r in results])
+
+
+def final_vs_earlier(games: np.ndarray, stack: np.ndarray) -> list[list[dict[str, Any]]]:
+    """Each seed's final checkpoint against each earlier one (the matrices' bottom rows, without the
+    diagonal), as rows shaped like log rows ({"games", "final_vs"}), so two_panel can draw them."""
+    return [
+        [{"games": int(g), "final_vs": float(x)} for g, x in zip(games[:-1], m[-1, :-1], strict=True)]
+        for m in stack
+    ]
+
+
+def _diverging(vlim: float):
+    """The colormap and its (vmin, vmax), symmetric around an even score. NaN cells (a player
+    against itself) are left white."""
+    from matplotlib.colors import LinearSegmentedColormap
+
+    cmap = LinearSegmentedColormap.from_list("crossplay", DIVERGING).with_extremes(bad="white")
+    return cmap, 0.5 - vlim, 0.5 + vlim
+
+
+def _vlim(*matrices: np.ndarray) -> float:
+    """Half-width of the colour scale: the largest distance from 0.5, rounded up to 0.05."""
+    dev = max(float(np.nanmax(np.abs(m - 0.5))) for m in matrices)
+    return max(0.05, math.ceil(dev * 20 - 1e-9) / 20)
+
+
+def _heatmap_axes(ax: plt.Axes) -> None:
+    ax.grid(False)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.tick_params(length=0, pad=1.5)
+
+
+def _colorbar(fig: plt.Figure, image, axes, vmin: float, vmax: float, label: str) -> None:
+    bar = fig.colorbar(image, ax=axes, ticks=[vmin, 0.5, vmax], fraction=0.04, pad=0.02, aspect=15)
+    bar.outline.set_visible(False)
+    bar.ax.tick_params(length=0, labelsize=6.5)
+    bar.set_label(label, fontsize=7, color=INK_2)
+
+
 def fig_crossplay(exp: str, root: Path, out: Path) -> None:
-    """F4: cross-play heatmaps, naive vs pool (evaluate.crossplay_matrix over 15 checkpoints per run).
-    Writes f4_crossplay.pdf."""
-    raise NotImplementedError("analyze.fig_crossplay")
+    """F4: within-run cross-play (spec §4.7, E3), from runs/<exp>/*/seed*/crossplay.json.
+
+    f4_crossplay.pdf          one heatmap per condition: cell (i, j) = checkpoint i's score against
+                              checkpoint j, mean over seeds. Rows and columns run from the first
+                              trained checkpoint (top, left) to the final one (bottom, right).
+    f4_final_vs_earlier.pdf   the heatmaps' bottom rows as curves: the final checkpoint's score
+                              against each earlier one, F1's layout (mean, min-max band over seeds).
+                              Below 0.5 means an earlier checkpoint beats the final one (H2)."""
+    results = load_crossplay(exp, root)
+    if not results:
+        raise Skip(f"no crossplay.json in {exp}'s runs (make crossplay EXPS={exp})")
+    conds = [(t, s) for t in TARGETS for s in SAMPLINGS if (t, s) in results]
+    data = {c: crossplay_mean(results[c]) for c in conds}
+    means = {c: m.mean(axis=0) for c, (_, m) in data.items()}
+    cmap, vmin, vmax = _diverging(_vlim(*means.values()))
+
+    with plt.rc_context(STYLE):
+        fig, axes = plt.subplots(1, len(conds), figsize=(WIDTH, 1.7), layout="constrained", squeeze=False)
+        axes = axes[0]
+        for ax, cond in zip(axes, conds):
+            games, stack = data[cond]
+            image = ax.imshow(means[cond], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
+            ticks = sorted({0, (len(games) - 1) // 2, len(games) - 1})  # first, middle, final
+            labels = [f"{games[i] / 1000:g}k" for i in ticks]
+            ax.set_xticks(ticks, labels)
+            ax.set_yticks(ticks, labels if ax is axes[0] else [])
+            n = len(stack)
+            ax.set_title(f"{_cond_name(cond)} ({n} seed{'s' if n > 1 else ''})", loc="left", color=INK)
+            _heatmap_axes(ax)
+        axes[0].set_ylabel("checkpoint")
+        fig.supxlabel("opponent checkpoint (training games)", fontsize=8, color=INK_2)
+        _colorbar(fig, image, list(axes), vmin, vmax, "row's score")
+        _save(fig, out / "f4_crossplay.pdf")
+        plt.close(fig)
+
+    two_panel(
+        {cond: final_vs_earlier(games, stack) for cond, (games, stack) in data.items()},
+        "final_vs",
+        "final checkpoint's score",
+        out / "f4_final_vs_earlier.pdf",
+        reference=(0.5, "even"),
+        xlabel="earlier checkpoint (training games)",
+        reference_left=True,  # the curves end on the line, so its label goes where they start, high above
+    )
+
+
+def fig_crossplay_finals(exp: str, root: Path, out: Path) -> None:
+    """F4 (across runs): every run's final checkpoint against every other's, from
+    runs/<exp>/crossplay_finals.json. Writes f4_finals.pdf, three panels:
+
+    1. the full matrix, runs grouped by condition (thin white lines between the groups);
+    2. the mean of each condition-against-condition block (evaluate.block_means), value printed:
+       these are the head-to-head numbers (1 and 2 share the colour scale);
+    3. each run's mean score against every run of the other conditions, one dot per seed (colour =
+       sampler, as in F1-F3), with the condition's mean as a bar: the seed spread behind panel 2."""
+    path = root / exp / rundir.CROSSPLAY_FINALS_FILE
+    if not path.exists():
+        raise Skip(f"no {path.name} for {exp} (make crossplay EXPS={exp})")
+    result = json.loads(path.read_text())
+    m = np.array(result["score"], dtype=float)
+    groups = [p["run"].split("/")[0] for p in result["players"]]
+    names, blocks = block_means(m, groups)
+    cmap, vmin, vmax = _diverging(_vlim(m))
+    labels = [_cond_name(n) for n in names]
+    two_line = [lab.replace("-", "\n") for lab in labels]
+    edges = np.flatnonzero([a != b for a, b in itertools.pairwise(groups)]) + 0.5  # between condition groups
+    centres = [np.mean([i for i, g in enumerate(groups) if g == n]) for n in names]
+    groups_arr = np.array(groups)
+    vs_others = np.array([m[i, groups_arr != g].mean() for i, g in enumerate(groups)])
+
+    with plt.rc_context(STYLE):
+        fig, (full, block, runs) = plt.subplots(
+            1, 3, figsize=(WIDTH, 1.7), layout="constrained", gridspec_kw={"width_ratios": [1, 1, 1.1]}
+        )
+        image = full.imshow(m, cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
+        for e in edges:
+            full.axhline(e, color="white", linewidth=1.2)
+            full.axvline(e, color="white", linewidth=1.2)
+        full.set_xticks(centres, two_line)
+        full.set_yticks(centres, labels)
+        full.set_title(f"{len(groups)} finals", loc="left", color=INK)
+        _heatmap_axes(full)
+
+        block.imshow(blocks, cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
+        for i in range(len(names)):
+            for j in range(len(names)):
+                if not np.isnan(blocks[i, j]):
+                    dark = abs(blocks[i, j] - 0.5) > 0.6 * (vmax - 0.5)  # white text on the darkest cells
+                    block.text(j, i, f"{blocks[i, j]:.3f}", ha="center", va="center", fontsize=6,
+                               color="white" if dark else INK)  # fmt: skip
+        block.set_xticks(range(len(names)), two_line)
+        block.set_yticks(range(len(names)), [])
+        block.set_title("block means", loc="left", color=INK)
+        _heatmap_axes(block)
+        _colorbar(fig, image, [full, block], vmin, vmax, "row's score")
+
+        for x, name in enumerate(names):
+            ys = vs_others[groups_arr == name]
+            color = COLORS[name.split("-", 1)[1]]
+            offsets = np.linspace(-0.12, 0.12, len(ys)) if len(ys) > 1 else np.zeros(1)
+            runs.scatter(x + offsets, ys, s=10, color=color, linewidths=0, zorder=3)
+            runs.plot([x - 0.25, x + 0.25], [ys.mean()] * 2, color=INK_2, linewidth=1.2, zorder=2)
+        runs.axhline(0.5, color=MUTED, linewidth=1.0, linestyle=(0, (1, 1.5)), zorder=1)  # even; unlabelled,
+        # since dots can sit anywhere along it
+        runs.set_xticks(range(len(names)), two_line)
+        runs.set_xlim(-0.5, len(names) - 0.5)
+        runs.tick_params(axis="x", length=0)
+        runs.set_ylabel("vs other conditions")
+        runs.set_title("each run (bar = mean)", loc="left", color=INK)
+        _save(fig, out / "f4_finals.pdf")
+        plt.close(fig)
 
 
 def fig_endgame_6x6(logs: Logs, out: Path) -> None:
@@ -532,7 +715,8 @@ def main(argv: list[str] | None = None) -> None:
         fig_dir.mkdir(parents=True, exist_ok=True)
         key, _ = external_metric(board)
         _try("F3 self-play vs external", fig_selfplay_vs_external, logs, fig_dir, board)
-        _try("F4 cross-play", fig_crossplay, exp, args.runs_root, fig_dir)
+        _try("F4 cross-play within runs", fig_crossplay, exp, args.runs_root, fig_dir)
+        _try("F4 cross-play across runs", fig_crossplay_finals, exp, args.runs_root, fig_dir)
         _try("F7 checkpoint regret", fig_regret, exp, args.runs_root, fig_dir)
         _try("T1 summary table", table_summary, logs, args.tables / exp, key)
         if board == 4:

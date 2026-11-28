@@ -196,17 +196,9 @@ def describe_within(result: dict[str, Any]) -> str:
 
 
 def condition_blocks(result: dict[str, Any]) -> tuple[list[str], np.ndarray]:
-    """Conditions in order of appearance, and B[a, b] = mean score of condition a's runs against
-    condition b's. Same-condition blocks are NaN: they average to exactly 0.5 by construction (each
-    pair's two cells add to 1), and with one run per condition there is nothing to average."""
-    conds = [p["run"].split("/")[0] for p in result["players"]]
-    names = list(dict.fromkeys(conds))
-    m = score_matrix(result)
-    member = {a: np.array([c == a for c in conds]) for a in names}
-    blocks = np.array(
-        [[np.nan if a == b else m[np.ix_(member[a], member[b])].mean() for b in names] for a in names]
-    )
-    return names, blocks
+    """evaluate.block_means by condition: B[a, b] = mean score of condition a's runs against
+    condition b's (NaN when a == b)."""
+    return evaluate.block_means(score_matrix(result), [p["run"].split("/")[0] for p in result["players"]])
 
 
 def describe_across(result: dict[str, Any]) -> str:

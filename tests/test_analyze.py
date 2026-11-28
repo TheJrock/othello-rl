@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import numpy as np
@@ -112,3 +113,93 @@ def test_one_seed_has_no_spread(tmp_path):
     rows = analyze.t1_rows(analyze.summaries(one, "score_positional"))
     for kind, _, cells in rows:
         assert all(np.isnan(spread) for _, spread in cells)  # no std or SE from a single seed
+
+
+# --- F4: cross-play (scripts/crossplay.py's files) ------------------------------------------------
+
+
+def _crossplay_file(path, players, score, kind="within"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    (path.parent / "config.yaml").touch()  # rundir.find_runs only needs it to exist
+    path.write_text(json.dumps({"kind": kind, "players": players, "score": score}))
+
+
+def _antisymmetric(k, rng):
+    m = rng.uniform(0.3, 0.7, (k, k))
+    m = np.triu(m, 1) + np.tril(1 - m.T, -1)
+    np.fill_diagonal(m, np.nan)
+    return m
+
+
+def _json(m):
+    return [[None if np.isnan(x) else float(x) for x in row] for row in m]
+
+
+@pytest.fixture
+def crossplay_runs(tmp_path):
+    """Two seeds of each condition, 4 checkpoints each, plus an across-run file of all 8 finals."""
+    rng = np.random.default_rng(0)
+    root = tmp_path / "runs"
+    games = [1000, 2000, 3000, 4000]
+    within = {}
+    for target in ("env", "negamax"):
+        for sampling in ("naive", "pool"):
+            for seed in (0, 1):
+                m = _antisymmetric(4, rng)
+                run = f"{target}-{sampling}/seed{seed}"
+                players = [{"run": run, "games": g} for g in games]
+                _crossplay_file(root / "t" / run / "crossplay.json", players, _json(m))
+                within[(target, sampling, seed)] = m
+    runs = [f"{t}-{s}/seed{k}" for t in ("env", "negamax") for s in ("naive", "pool") for k in (0, 1)]
+    finals = _antisymmetric(len(runs), rng)
+    _crossplay_file(
+        root / "t" / "crossplay_finals.json",
+        [{"run": r, "games": 4000} for r in runs],
+        _json(finals),
+        "across",
+    )
+    return root, games, within, finals
+
+
+def test_crossplay_mean_and_final_rows(crossplay_runs):
+    root, games, within, _ = crossplay_runs
+    results = analyze.load_crossplay("t", root)
+    assert sorted(results) == [("env", "naive"), ("env", "pool"), ("negamax", "naive"), ("negamax", "pool")]
+    g, stack = analyze.crossplay_mean(results[("env", "pool")])
+    assert list(g) == games and stack.shape == (2, 4, 4)
+    np.testing.assert_array_equal(
+        stack.mean(axis=0), (within[("env", "pool", 0)] + within[("env", "pool", 1)]) / 2
+    )
+    rows = analyze.final_vs_earlier(g, stack)  # the final checkpoint's score, not the earlier one's
+    assert [r["games"] for r in rows[1]] == games[:-1]
+    assert [r["final_vs"] for r in rows[1]] == list(within[("env", "pool", 1)][-1, :-1])
+
+
+def test_crossplay_mean_refuses_mismatched_checkpoints():
+    a = {"players": [{"games": 1}, {"games": 2}], "score": [[None, 0.5], [0.5, None]]}
+    b = {"players": [{"games": 1}, {"games": 3}], "score": [[None, 0.5], [0.5, None]]}
+    with pytest.raises(ValueError, match="different checkpoints"):
+        analyze.crossplay_mean([a, b])
+
+
+def test_crossplay_figures_are_written(crossplay_runs, tmp_path):
+    root, *_ = crossplay_runs
+    analyze.fig_crossplay("t", root, tmp_path)
+    analyze.fig_crossplay_finals("t", root, tmp_path)
+    for name in ("f4_crossplay", "f4_final_vs_earlier", "f4_finals"):
+        pdf = (tmp_path / f"{name}.pdf").read_bytes()
+        assert len(pdf) > 1000 and b"/CreationDate" not in pdf
+
+
+def test_crossplay_figures_skip_without_files(tmp_path):
+    with pytest.raises(analyze.Skip, match="make crossplay"):
+        analyze.fig_crossplay("t", tmp_path, tmp_path)
+    with pytest.raises(analyze.Skip, match="make crossplay"):
+        analyze.fig_crossplay_finals("t", tmp_path, tmp_path)
+
+
+def test_colour_scale_is_symmetric_and_rounded_up():
+    assert analyze._vlim(np.array([[np.nan, 0.81], [0.19, np.nan]])) == pytest.approx(0.35)  # 0.31 up
+    assert analyze._vlim(np.array([[0.5, 0.5]])) == pytest.approx(0.05)  # never narrower than ±0.05
+    assert analyze._vlim(np.array([[0.2, 0.6]])) == pytest.approx(0.30)  # exactly on a step stays there
+    assert analyze._cond_name(("negamax", "pool")) == analyze._cond_name("negamax-pool") == "N-pool"
