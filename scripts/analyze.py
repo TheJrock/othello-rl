@@ -474,6 +474,26 @@ def finals_measures(result: dict[str, Any]) -> list[dict[str, Any]]:
     return measures
 
 
+def crossplay_start_scores(exp: str, root: Path) -> tuple[dict[Condition, np.ndarray], int] | None:
+    """T1's "From start" column: each run's start-position score against every run of the other
+    conditions (finals_measures' vs_others, F4's bottom-right panel), by condition in seed order,
+    and how many checkpoints of each run it averages. None without crossplay_finals.json or
+    without a start matrix in it (files from before Nov 27)."""
+    path = root / exp / rundir.CROSSPLAY_FINALS_FILE
+    if not path.exists():
+        return None
+    result = json.loads(path.read_text())
+    if "start" not in result:
+        return None
+    vs_others = finals_measures(result)[1]["vs_others"]
+    by_cond: dict[Condition, list[tuple[int, float]]] = defaultdict(list)
+    for player, value in zip(result["players"], vs_others, strict=True):
+        target, sampling, seed = rundir.run_condition(Path(player["run"]))
+        by_cond[(target, sampling)].append((seed, float(value)))
+    scores = {cond: np.array([v for _, v in sorted(pairs)]) for cond, pairs in by_cond.items()}
+    return scores, len(result["start"]["players"])
+
+
 def _dots_ylim(measures: Sequence[dict[str, Any]]) -> tuple[float, float]:
     """The each-run panels' shared y range: every row's dots and the even line, padded 8%."""
     values = np.concatenate([[0.5], *(m["vs_others"] for m in measures)])
@@ -599,6 +619,7 @@ T1_COLUMNS = [  # (summarize_run key, header, decimals)
     ("forgetting_events", "Forgetting events", 1),
     ("spearman", r"Spearman $\rho$", 2),
 ]
+START_COLUMN = ("start", "From start", 3)  # added by table_summary when the cross-play file has it
 
 
 def common_horizon(logs: Logs) -> int:
@@ -636,6 +657,7 @@ def _gap(a: np.ndarray, b: np.ndarray) -> tuple[float, float]:
 
 def t1_rows(
     stats: dict[Condition, dict[str, np.ndarray]],
+    columns: Sequence[tuple[str, str, int]] = T1_COLUMNS,
 ) -> list[tuple[str, str, list[tuple[float, float]]]]:
     """[(kind, label, [(value, spread) per column])]. kind is "cond" (mean ± sd over seeds) or "gap"
     (difference of means ± SE)."""
@@ -644,18 +666,16 @@ def t1_rows(
         for sampling in SAMPLINGS:
             if (target, sampling) in stats:
                 s = stats[(target, sampling)]
-                rows.append(("cond", f"{target}-{sampling}", [_mean_sd(s[c]) for c, _, _ in T1_COLUMNS]))
+                rows.append(("cond", f"{target}-{sampling}", [_mean_sd(s[c]) for c, _, _ in columns]))
     gaps = {}
     for target in TARGETS:
         if (target, "naive") in stats and (target, "pool") in stats:
             pool, naive = stats[(target, "pool")], stats[(target, "naive")]
-            gaps[target] = {c: (pool[c], naive[c]) for c, _, _ in T1_COLUMNS}
-            rows.append(
-                ("gap", f"pool - naive ({target})", [_gap(*gaps[target][c]) for c, _, _ in T1_COLUMNS])
-            )
+            gaps[target] = {c: (pool[c], naive[c]) for c, _, _ in columns}
+            rows.append(("gap", f"pool - naive ({target})", [_gap(*gaps[target][c]) for c, _, _ in columns]))
     if len(gaps) == 2:  # H4: is the pool's effect bigger under env than under negamax?
         h4 = []
-        for c, _, _ in T1_COLUMNS:
+        for c, _, _ in columns:
             (ge, se_e), (gn, se_n) = _gap(*gaps["env"][c]), _gap(*gaps["negamax"][c])
             h4.append((ge - gn, math.hypot(se_e, se_n)))
         rows.append(("gap", "H4: env gap - negamax gap", h4))
@@ -682,14 +702,41 @@ def _tex_label(label: str) -> str:
     return f"{LATEX_NAMES[target]}-{LATEX_NAMES[sampling]}"
 
 
-def table_summary(logs: Logs, out: Path, key: str = "score_positional") -> None:
+def table_summary(
+    logs: Logs,
+    out: Path,
+    key: str = "score_positional",
+    start: tuple[dict[Condition, np.ndarray], int] | None = None,
+) -> None:
     """T1: evaluate.summarize_run numbers, mean ± std across seeds, plus the (pool − naive) gap per
     target type (H4). Writes t1_summary.tex: a bare booktabs `tabular` (no `table` wrapper; the report
     supplies the caption). `out` is a directory that may not exist yet.
 
+    With `start` (crossplay_start_scores), a last column "From start": each run's start-position
+    cross-play score against the other conditions, as in F4's bottom-right panel. It is left out,
+    with a note, unless it covers as many seeds of each condition as the logs do (crossplay.py
+    skips the across matrix while any run is unfinished, so a stale file has fewer).
+
     Also writes t1_summary.txt (the same numbers as plain text) and prints it."""
     stats = summaries(logs, key)
-    rows = t1_rows(stats)
+    columns = list(T1_COLUMNS)
+    start_note = start_note_tex = ""
+    if start is not None:
+        scores, levels = start
+        if {c: len(v) for c, v in scores.items()} == {c: len(runs) for c, runs in logs.items()}:
+            for cond, values in scores.items():
+                stats[cond]["start"] = values
+            columns.append(START_COLUMN)
+            start_note = (
+                f"From start: start-position cross-play score vs the other conditions, each run's last "
+                f"{levels} checkpoints (gap SEs are rough: the runs played each other). "
+            )
+            start_note_tex = start_note.replace("From start:", r"\emph{From start}:")
+        else:
+            print(
+                "       [T1] From start left out: crossplay_finals.json doesn't cover these runs (make crossplay)"
+            )
+    rows = t1_rows(stats, columns)
     seeds = sorted({len(runs) for runs in logs.values()})
     horizon = common_horizon(logs)
     cut = horizon < max(rows[-1]["games"] for runs in logs.values() for rows in runs)
@@ -698,9 +745,9 @@ def table_summary(logs: Logs, out: Path, key: str = "score_positional") -> None:
 
     key_tex = key.replace("_", r"\_")
     tex = [
-        r"\begin{tabular}{l" + "c" * len(T1_COLUMNS) + "}",
+        r"\begin{tabular}{l" + "c" * len(columns) + "}",
         r"\toprule",
-        " & ".join(["", *(h for _, h, _ in T1_COLUMNS)]) + r" \\",
+        " & ".join(["", *(h for _, h, _ in columns)]) + r" \\",
         r"\midrule",
     ]
     previous = "cond"
@@ -711,16 +758,16 @@ def table_summary(logs: Logs, out: Path, key: str = "score_positional") -> None:
         tex.append(
             " & ".join(
                 [_tex_label(label)]
-                + [_fmt(v, s, d, kind == "gap", tex=True) for (v, s), (_, _, d) in zip(cells, T1_COLUMNS)]
+                + [_fmt(v, s, d, kind == "gap", tex=True) for (v, s), (_, _, d) in zip(cells, columns)]
             )
             + r" \\"
         )
     tex += [
         r"\bottomrule",
         (
-            rf"\multicolumn{{{len(T1_COLUMNS) + 1}}}{{l}}{{\footnotesize Metric: \texttt{{{key_tex}}}; "
+            rf"\multicolumn{{{len(columns) + 1}}}{{l}}{{\footnotesize Metric: \texttt{{{key_tex}}}; "
             rf"{'/'.join(map(str, seeds))} seed(s) per condition. {cut_note}Final: mean of the last "
-            rf"{FINAL_POINTS} eval points. Condition rows: mean $\pm$ std over seeds. "
+            rf"{FINAL_POINTS} eval points. {start_note_tex}Condition rows: mean $\pm$ std over seeds. "
             r"Gap rows: difference of means $\pm$ standard error.}"
         ),
         r"\end{tabular}",
@@ -730,16 +777,15 @@ def table_summary(logs: Logs, out: Path, key: str = "score_positional") -> None:
     width = max(len(label) for _, label, _ in rows) + 2
     lines = [
         f"T1 ({key}; final = mean of the last {FINAL_POINTS} eval points; condition rows mean ± sd "
-        f"over seeds, gap rows difference ± SE). {cut_note}".rstrip(),
+        f"over seeds, gap rows difference ± SE). {cut_note}{start_note}".rstrip(),
         f"{'':{width}}"
-        + "".join(f"{h.replace('$', '').replace(chr(92) + 'rho', 'rho'):>20}" for _, h, _ in T1_COLUMNS),
+        + "".join(f"{h.replace('$', '').replace(chr(92) + 'rho', 'rho'):>20}" for _, h, _ in columns),
     ]
     for kind, label, cells in rows:
         lines.append(
             f"{label:{width}}"
             + "".join(
-                f"{_fmt(v, s, d, kind == 'gap', tex=False):>20}"
-                for (v, s), (_, _, d) in zip(cells, T1_COLUMNS)
+                f"{_fmt(v, s, d, kind == 'gap', tex=False):>20}" for (v, s), (_, _, d) in zip(cells, columns)
             )
         )
     (out / "t1_summary.txt").write_text("\n".join(lines) + "\n")
@@ -780,7 +826,8 @@ def main(argv: list[str] | None = None) -> None:
         _try("F4 cross-play within runs", fig_crossplay, exp, args.runs_root, fig_dir)
         _try("F4 cross-play across runs", fig_crossplay_finals, exp, args.runs_root, fig_dir)
         _try("F7 checkpoint regret", fig_regret, exp, args.runs_root, fig_dir)
-        _try("T1 summary table", table_summary, logs, args.tables / exp, key)
+        start = crossplay_start_scores(exp, args.runs_root)
+        _try("T1 summary table", table_summary, logs, args.tables / exp, key, start)
         if board == 4:
             _try("F1 4×4 accuracy", fig_accuracy_4x4, logs, fig_dir)
             _try("F8 true vs checkpoint regret", fig_true_vs_checkpoint_regret, exp, args.runs_root, fig_dir)

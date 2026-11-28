@@ -110,6 +110,67 @@ def test_t1_files(logs, tmp_path):
     assert (tmp_path / "t1" / "t1_summary.txt").exists()
 
 
+def _start(values):
+    """crossplay_start_scores' shape: start-position scores by condition, 5 checkpoints a run."""
+    return {cond: np.array(v) for cond, v in values.items()}, 5
+
+
+START_VALUES = {
+    ("env", "naive"): [0.40, 0.45, 0.35],
+    ("env", "pool"): [0.42, 0.38, 0.40],
+    ("negamax", "naive"): [0.55, 0.50, 0.60],
+    ("negamax", "pool"): [0.70, 0.60, 0.65],
+}
+
+
+def _txt_row(path, label):
+    return next(line for line in path.read_text().splitlines() if line.startswith(label + " "))
+
+
+def test_t1_from_start_column(logs, tmp_path, capsys):
+    analyze.table_summary(logs, tmp_path, "score_positional", _start(START_VALUES))
+    txt, tex = tmp_path / "t1_summary.txt", (tmp_path / "t1_summary.tex").read_text()
+    assert txt.read_text().splitlines()[1].rstrip().endswith("From start")
+    assert r"\begin{tabular}{lcccccc}" in tex and r"& From start \\" in tex and r"\multicolumn{7}" in tex
+    assert "each run's last 5 checkpoints" in txt.read_text() and r"\emph{From start}" in tex
+    # Its own numbers in the last column: mean ± sd over seeds, pool − naive ± SE, H4.
+    env_naive, env_pool = np.array(START_VALUES[("env", "naive")]), np.array(START_VALUES[("env", "pool")])
+    assert _txt_row(txt, "env-naive").endswith(f"{env_naive.mean():.3f} ± {env_naive.std(ddof=1):.3f}")
+    gap, se = analyze._gap(env_pool, env_naive)
+    assert _txt_row(txt, "pool - naive (env)").endswith(f"{gap:+.3f} ± {se:.3f}")
+    neg_gap, neg_se = analyze._gap(*(np.array(START_VALUES[("negamax", s)]) for s in ("pool", "naive")))
+    h4 = f"{gap - neg_gap:+.3f} ± {np.hypot(se, neg_se):.3f}"
+    assert _txt_row(txt, "H4: env gap - negamax gap").endswith(h4)
+    # The other columns are untouched.
+    analyze.table_summary(logs, tmp_path / "plain", "score_positional")
+    plain = (tmp_path / "plain" / "t1_summary.txt").read_text().splitlines()
+    with_start = txt.read_text().splitlines()
+    for a, b in zip(plain[2:], with_start[2:], strict=True):
+        assert b.startswith(a)
+
+    # A cross-play file that doesn't cover these runs (a seed short): the column is left out.
+    short = {**START_VALUES, ("env", "pool"): [0.42, 0.38]}
+    analyze.table_summary(logs, tmp_path / "short", "score_positional", _start(short))
+    assert "From start" not in (tmp_path / "short" / "t1_summary.txt").read_text()
+    assert "From start left out" in capsys.readouterr().out
+
+
+def test_crossplay_start_scores(crossplay_runs, tmp_path):
+    root, *_ = crossplay_runs
+    scores, levels = analyze.crossplay_start_scores("t", root)
+    result = json.loads((root / "t" / "crossplay_finals.json").read_text())
+    vs_others = analyze.finals_measures(result)[1]["vs_others"]
+    runs = [p["run"] for p in result["players"]]
+    assert levels == 3 and sorted(scores) == sorted(START_VALUES)
+    for (target, sampling), values in scores.items():
+        expected = [vs_others[runs.index(f"{target}-{sampling}/seed{k}")] for k in (0, 1)]  # seed order
+        np.testing.assert_array_equal(values, expected)
+    assert analyze.crossplay_start_scores("t", tmp_path) is None  # no file
+    del result["start"]
+    (root / "t" / "crossplay_finals.json").write_text(json.dumps(result))
+    assert analyze.crossplay_start_scores("t", root) is None  # a file from before the start matrix
+
+
 def test_one_seed_has_no_spread(tmp_path):
     one = {("env", "naive"): [_log(6, 0.5, 0)], ("env", "pool"): [_log(6, 0.6, 1)]}
     rows = analyze.t1_rows(analyze.summaries(one, "score_positional"))

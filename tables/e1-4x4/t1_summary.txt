@@ -1,9 +1,9 @@
-T1 (accuracy_4x4; final = mean of the last 10 eval points; condition rows mean ± sd over seeds, gap rows difference ± SE).
-                                          Final                Peak        Max drawdown   Forgetting events        Spearman rho
-env-naive                         0.758 ± 0.005       0.779 ± 0.008       0.034 ± 0.002           0.0 ± 0.0        -0.14 ± 0.17
-env-pool                          0.760 ± 0.006       0.775 ± 0.007       0.026 ± 0.012           0.0 ± 0.0        -0.07 ± 0.12
-negamax-naive                     0.785 ± 0.002       0.813 ± 0.003       0.038 ± 0.002           0.0 ± 0.0        -0.25 ± 0.15
-negamax-pool                      0.786 ± 0.006       0.814 ± 0.009       0.037 ± 0.008           0.0 ± 0.0        -0.25 ± 0.05
-pool - naive (env)               +0.002 ± 0.003      -0.004 ± 0.005      -0.007 ± 0.005          +0.0 ± 0.0        +0.07 ± 0.09
-pool - naive (negamax)           +0.001 ± 0.003      +0.001 ± 0.004      -0.001 ± 0.004          +0.0 ± 0.0        +0.01 ± 0.07
-H4: env gap - negamax gap        +0.001 ± 0.004      -0.005 ± 0.006      -0.006 ± 0.007          +0.0 ± 0.0        +0.06 ± 0.12
+T1 (accuracy_4x4; final = mean of the last 10 eval points; condition rows mean ± sd over seeds, gap rows difference ± SE). From start: start-position cross-play score vs the other conditions, each run's last 5 checkpoints (gap SEs are rough: the runs played each other).
+                                          Final                Peak        Max drawdown   Forgetting events        Spearman rho          From start
+env-naive                         0.758 ± 0.005       0.779 ± 0.008       0.034 ± 0.002           0.0 ± 0.0        -0.14 ± 0.17       0.503 ± 0.003
+env-pool                          0.760 ± 0.006       0.775 ± 0.007       0.026 ± 0.012           0.0 ± 0.0        -0.07 ± 0.12       0.501 ± 0.002
+negamax-naive                     0.785 ± 0.002       0.813 ± 0.003       0.038 ± 0.002           0.0 ± 0.0        -0.25 ± 0.15       0.498 ± 0.004
+negamax-pool                      0.786 ± 0.006       0.814 ± 0.009       0.037 ± 0.008           0.0 ± 0.0        -0.25 ± 0.05       0.498 ± 0.003
+pool - naive (env)               +0.002 ± 0.003      -0.004 ± 0.005      -0.007 ± 0.005          +0.0 ± 0.0        +0.07 ± 0.09      -0.001 ± 0.001
+pool - naive (negamax)           +0.001 ± 0.003      +0.001 ± 0.004      -0.001 ± 0.004          +0.0 ± 0.0        +0.01 ± 0.07      +0.000 ± 0.002
+H4: env gap - negamax gap        +0.001 ± 0.004      -0.005 ± 0.006      -0.006 ± 0.007          +0.0 ± 0.0        +0.06 ± 0.12      -0.001 ± 0.003
